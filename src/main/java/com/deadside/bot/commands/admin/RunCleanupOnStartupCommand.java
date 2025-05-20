@@ -23,46 +23,15 @@ public class RunCleanupOnStartupCommand implements ICommand {
 
     @Override
     public void execute(SlashCommandInteractionEvent event) {
-        // Check if user is admin
-        if (!isAdmin(event.getUser().getIdLong())) {
-            event.reply("You do not have permission to use this command.")
-                    .setEphemeral(true)
-                    .queue();
-            return;
-        }
-
         boolean enabled = event.getOption("enabled").getAsBoolean();
-        
-        // Save the setting to config
         config.setProperty("startup.cleanup.enabled", String.valueOf(enabled));
-        
-        event.reply("Automatic cleanup on startup has been " + (enabled ? "enabled" : "disabled") + ".")
-                .setEphemeral(true)
-                .queue();
-        
-        logger.info("Automatic cleanup on startup " + (enabled ? "enabled" : "disabled") + " by " + event.getUser().getAsTag());
-    }
-
-    private boolean isAdmin(long userId) {
-        try {
-            // Get the bot owner ID
-            String ownerIdStr = config.getBotOwnerId();
-            long ownerId = ownerIdStr != null && !ownerIdStr.isEmpty() ? Long.parseLong(ownerIdStr) : 0;
-            
-            // Check if user is owner or in admin list
-            if (ownerIdStr != null && !ownerIdStr.isEmpty()) {
-                return String.valueOf(userId).equals(ownerIdStr) || config.getAdminUserIds().contains(userId);
-            }
-            return userId == ownerId || config.getAdminUserIds().contains(userId);
-        } catch (Exception e) {
-            logger.warning("Error checking admin permission: " + e.getMessage());
-            return false;
-        }
+        event.reply("Automatic cleanup on startup has been " + (enabled ? "enabled" : "disabled") + ".").setEphemeral(true).queue();
+        logger.info("Automatic cleanup on startup {} by {}", enabled ? "enabled" : "disabled", event.getUser().getAsTag());
     }
 
     @Override
     public String getName() {
-        return "setup_startup_cleanup";
+        return "cleanup_startup";
     }
 
     @Override
