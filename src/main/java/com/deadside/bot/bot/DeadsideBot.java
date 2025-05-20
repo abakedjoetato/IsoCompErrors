@@ -111,8 +111,11 @@ public class DeadsideBot {
             DeadsideCsvParser csvParserWithJda = new DeadsideCsvParser(jda, sftpConnector, playerRepository, gameServerRepository);
             DeadsideLogParser logParserWithJda = new DeadsideLogParser(jda, gameServerRepository, sftpConnector);
             
-            // Initialize command manager with all required dependencies
+            // Initialize command manager with all required dependencies and register all commands
             commandManager = new CommandManager(jda, gameServerRepository, playerRepository, sftpConnector, csvParserWithJda, logParserWithJda);
+            
+            // Register commands with Discord API
+            initializeCommandRegistration();
             
             // Now add event listeners after command manager is initialized
             jda.addEventListener(

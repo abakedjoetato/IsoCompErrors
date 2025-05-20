@@ -103,14 +103,8 @@ public class Bot {
             }
         });
         
-        // Add simple listener for command interactions
-        jda.addEventListener(new ListenerAdapter() {
-            @Override
-            public void onSlashCommandInteraction(net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent event) {
-                logger.info("Received slash command: {}", event.getName());
-                event.reply("Command received: " + event.getName()).queue();
-            }
-        });
+        // We do not add a simple command listener here anymore
+        // Instead, we let the CommandListener handle all slash commands properly
         
         // Register listeners (simplified for compilation)
         for (ListenerAdapter listener : listeners) {
