@@ -1,99 +1,80 @@
 package com.deadside.bot.commands.admin;
 
 import com.deadside.bot.commands.ICommand;
-import com.deadside.bot.isolation.DataCleanupTool;
-import com.deadside.bot.utils.OwnerCheck;
-import net.dv8tion.jda.api.EmbedBuilder;
-import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
+import com.deadside.bot.utils.Config;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.interactions.commands.Command.Choice;
-import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 
-import java.awt.*;
-import java.util.List;
+import java.util.logging.Logger;
 
 /**
- * Admin command to control automatic cleanup on bot startup
- * This can only be executed by the bot owner
+ * Admin command to enable/disable automatic cleanup on startup
  */
 public class RunCleanupOnStartupCommand implements ICommand {
-    // Configuration settings
-    private static boolean runCleanupOnStartup = true;
-    
-    // Initialize from DataCleanupTool if possible
-    static {
-        try {
-            runCleanupOnStartup = DataCleanupTool.isRunCleanupOnStartup();
-        } catch (Exception e) {
-            // Fall back to default if there's any issue
-        }
+    private static final Logger logger = Logger.getLogger(RunCleanupOnStartupCommand.class.getName());
+    private final Config config;
+
+    public RunCleanupOnStartupCommand(Config config) {
+        this.config = config;
     }
-    
-    @Override
-    public String getName() {
-        return "set-startup-cleanup";
-    }
-    
-    @Override
-    public CommandData getCommandData() {
-        return Commands.slash("set-startup-cleanup", "Configure automatic cleanup on startup [Bot Owner Only]")
-            .setGuildOnly(true)
-            .addOption(OptionType.BOOLEAN, "enabled", "Enable or disable automatic cleanup on startup", true);
-    }
-    
-    @Override
-    public List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
-        return List.of();
-    }
-    
-    /**
-     * Check if cleanup should run on startup
-     * @return True if cleanup should run on startup, false otherwise
-     */
-    public static boolean shouldRunCleanupOnStartup() {
-        return runCleanupOnStartup;
-    }
-    
+
     @Override
     public void execute(SlashCommandInteractionEvent event) {
-        // Check if user is bot owner
-        if (!OwnerCheck.isOwner(event.getUser().getIdLong())) {
-            event.reply("This command can only be used by the bot owner.").setEphemeral(true).queue();
+        // Check if user is admin
+        if (!isAdmin(event.getUser().getIdLong())) {
+            event.reply("You do not have permission to use this command.")
+                    .setEphemeral(true)
+                    .queue();
             return;
         }
+
+        boolean enabled = event.getOption("enabled").getAsBoolean();
         
-        // Get the enabled option
-        boolean enabled = event.getOption("enabled", false, OptionMapping::getAsBoolean);
+        // Save the setting to config
+        config.setProperty("startup.cleanup.enabled", String.valueOf(enabled));
         
+        event.reply("Automatic cleanup on startup has been " + (enabled ? "enabled" : "disabled") + ".")
+                .setEphemeral(true)
+                .queue();
+        
+        logger.info("Automatic cleanup on startup " + (enabled ? "enabled" : "disabled") + " by " + event.getUser().getAsTag());
+    }
+
+    private boolean isAdmin(long userId) {
         try {
-            // Set the setting
-            DataCleanupTool.setRunCleanupOnStartup(enabled);
+            // Get the bot owner ID
+            String ownerIdStr = config.getBotOwnerId();
+            long ownerId = ownerIdStr != null && !ownerIdStr.isEmpty() ? Long.parseLong(ownerIdStr) : 0;
             
-            // Create embed with results
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Automatic Cleanup Configuration")
-                .setDescription("The automatic cleanup setting has been updated.")
-                .setColor(Color.GREEN)
-                .addField("Setting", "Automatic Cleanup on Startup", false)
-                .addField("Value", enabled ? "Enabled" : "Disabled", false);
-            
-            if (enabled) {
-                embed.addField("Note", "The cleanup will run when the bot starts up next time.", false);
+            // Check if user is owner or in admin list
+            if (ownerIdStr != null && !ownerIdStr.isEmpty()) {
+                return String.valueOf(userId).equals(ownerIdStr) || config.getAdminUserIds().contains(userId);
             }
-            
-            event.replyEmbeds(embed.build()).queue();
+            return userId == ownerId || config.getAdminUserIds().contains(userId);
         } catch (Exception e) {
-            // Handle any unexpected errors
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Configuration Failed")
-                .setDescription("An unexpected error occurred while updating the setting.")
-                .setColor(Color.RED)
-                .addField("Error", e.getMessage(), false);
-            
-            event.replyEmbeds(embed.build()).queue();
+            logger.warning("Error checking admin permission: " + e.getMessage());
+            return false;
         }
+    }
+
+    @Override
+    public String getName() {
+        return "setup_startup_cleanup";
+    }
+
+    @Override
+    public String getDescription() {
+        return "Enable or disable automatic cleanup on startup";
+    }
+
+    @Override
+    public CommandData getCommandData() {
+        return Commands.slash(getName(), getDescription())
+                .addOptions(
+                        new OptionData(OptionType.BOOLEAN, "enabled", "Enable or disable automatic cleanup", true)
+                );
     }
 }

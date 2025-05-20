@@ -1,179 +1,109 @@
 package com.deadside.bot.commands.economy;
 
 import com.deadside.bot.commands.ICommand;
-import com.deadside.bot.db.models.LinkedPlayer;
 import com.deadside.bot.db.models.Player;
-import com.deadside.bot.db.repositories.LinkedPlayerRepository;
 import com.deadside.bot.db.repositories.PlayerRepository;
-import com.deadside.bot.utils.EmbedUtils;
-import com.deadside.bot.utils.EmbedSender;
+import com.deadside.bot.utils.Config;
+import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.awt.Color;
-import java.util.Random;
+import java.awt.*;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.logging.Logger;
 
 /**
- * Command for claiming daily rewards
+ * Command for claiming daily reward
  */
 public class DailyCommand implements ICommand {
-    private static final Logger logger = LoggerFactory.getLogger(DailyCommand.class);
-    private final LinkedPlayerRepository linkedPlayerRepository = new LinkedPlayerRepository();
-    private final PlayerRepository playerRepository = new PlayerRepository();
-    private final Random random = new Random();
-    
-    // Daily reward amounts
-    private static final int BASE_REWARD = 100;
-    private static final int MAX_STREAK_BONUS = 500;
-    private static final int MAX_STREAK_DAYS = 7;
-    
+    private static final Logger logger = Logger.getLogger(DailyCommand.class.getName());
+    private final PlayerRepository playerRepository;
+    private final Config config;
+    private static final Duration COOLDOWN = Duration.ofHours(24);
+
+    public DailyCommand(Config config) {
+        this.config = config;
+        this.playerRepository = new PlayerRepository();
+    }
+
+    @Override
+    public void execute(SlashCommandInteractionEvent event) {
+        String discordId = event.getUser().getId();
+        String guildId = event.getGuild().getId();
+        
+        try {
+            // Find the player by Discord ID
+            Player player = playerRepository.findByDiscordId(discordId, Long.parseLong(guildId));
+            
+            if (player == null) {
+                // If player doesn't exist, create a new one
+                player = new Player();
+                player.setName(event.getUser().getName());
+                player.setDiscordId(discordId);
+                player.setGuildId(Long.parseLong(guildId));
+                player.setCurrency(0);
+                player.setLastDailyReward(Instant.EPOCH); // Set to epoch time for first-time users
+            }
+            
+            // Check if the player can claim a daily reward
+            Instant now = Instant.now();
+            Instant lastClaim = player.getLastDailyReward();
+            Duration timeSinceLastClaim = Duration.between(lastClaim, now);
+            
+            if (timeSinceLastClaim.compareTo(COOLDOWN) < 0 && !lastClaim.equals(Instant.EPOCH)) {
+                // Player cannot claim yet
+                long hoursRemaining = COOLDOWN.minus(timeSinceLastClaim).toHours();
+                long minutesRemaining = COOLDOWN.minus(timeSinceLastClaim).toMinutes() % 60;
+                
+                EmbedBuilder embed = new EmbedBuilder()
+                        .setTitle("Daily Reward - Not Available")
+                        .setColor(Color.RED)
+                        .setDescription("You've already claimed your daily reward. Try again in " + 
+                                       hoursRemaining + "h " + minutesRemaining + "m");
+                
+                event.replyEmbeds(embed.build()).setEphemeral(true).queue();
+                return;
+            }
+            
+            // Player can claim reward
+            long rewardAmount = config.getDailyAmount();
+            player.setCurrency(player.getCurrency() + rewardAmount);
+            player.setLastDailyReward(now);
+            
+            // Save updated player
+            playerRepository.save(player);
+            
+            // Send success message
+            EmbedBuilder embed = new EmbedBuilder()
+                    .setTitle("Daily Reward Claimed!")
+                    .setColor(Color.GREEN)
+                    .setDescription("You've received **" + rewardAmount + "** credits!\n" +
+                                   "Your new balance: **" + player.getCurrency() + "** credits")
+                    .setFooter("Come back in 24 hours for your next reward");
+            
+            event.replyEmbeds(embed.build()).queue();
+            
+        } catch (Exception e) {
+            logger.warning("Error processing daily reward: " + e.getMessage());
+            event.reply("An error occurred while processing your daily reward.").setEphemeral(true).queue();
+        }
+    }
+
     @Override
     public String getName() {
         return "daily";
     }
-    
+
+    @Override
+    public String getDescription() {
+        return "Claim your daily currency reward";
+    }
+
     @Override
     public CommandData getCommandData() {
-        return Commands.slash(getName(), "Claim your daily reward of coins");
-    }
-    
-    @Override
-    public void execute(SlashCommandInteractionEvent event) {
-        try {
-            // Defer reply to give us time to process
-            event.deferReply().queue();
-            
-            // Get linked player information
-            long userId = event.getUser().getIdLong();
-            LinkedPlayer linkedPlayer = linkedPlayerRepository.findByDiscordId(userId);
-            
-            if (linkedPlayer == null) {
-                event.getHook().sendMessageEmbeds(
-                        EmbedUtils.errorEmbed("Not Linked", 
-                                "You don't have a linked Deadside account. Use `/link` to connect your Discord and Deadside accounts.")
-                ).queue();
-                return;
-            }
-            
-            // Get player stats
-            Player player = playerRepository.findByPlayerId(linkedPlayer.getMainPlayerId());
-            
-            if (player == null) {
-                event.getHook().sendMessageEmbeds(
-                        EmbedUtils.errorEmbed("Player Not Found", 
-                                "Unable to find player data. This could be because the player hasn't been active yet.")
-                ).queue();
-                return;
-            }
-            
-            // Check if player can claim daily reward
-            if (!player.getCurrency().isDailyRewardAvailable()) {
-                // Calculate time until next daily is available
-                long lastDaily = player.getCurrency().getLastDailyReward();
-                long nextDailyTime = lastDaily + (24 * 60 * 60 * 1000);
-                long timeUntilNext = nextDailyTime - System.currentTimeMillis();
-                
-                // Convert to hours/minutes
-                long hoursLeft = timeUntilNext / (60 * 60 * 1000);
-                long minutesLeft = (timeUntilNext % (60 * 60 * 1000)) / (60 * 1000);
-                
-                event.getHook().sendMessageEmbeds(
-                        EmbedUtils.warningEmbed("Already Claimed", 
-                                "You've already claimed your daily reward today. You can claim again in " + 
-                                hoursLeft + " hours and " + minutesLeft + " minutes.")
-                ).queue();
-                return;
-            }
-            
-            // Calculate streak and bonus
-            int streak = player.getCurrency().calculateStreak();
-            int streakBonus = calculateStreakBonus(streak);
-            
-            // Calculate reward with random bonus (90-110% of base)
-            int randomFactor = 90 + random.nextInt(21); // 90-110
-            int baseReward = BASE_REWARD * randomFactor / 100;
-            int totalReward = baseReward + streakBonus;
-            
-            // Give the reward
-            boolean success = player.getCurrency().claimDailyReward(totalReward);
-            
-            if (!success) {
-                event.getHook().sendMessageEmbeds(
-                        EmbedUtils.errorEmbed("Claim Failed", 
-                                "Failed to claim daily reward. Please try again later.")
-                ).queue();
-                return;
-            }
-            
-            // Save player
-            playerRepository.save(player);
-            
-            // Send success message
-            displayRewardMessage(event, player, baseReward, streakBonus, totalReward, streak + 1);
-            
-            logger.info("User {} claimed daily reward of {} coins (streak: {})", 
-                    event.getUser().getName(), totalReward, streak + 1);
-            
-        } catch (Exception e) {
-            logger.error("Error executing daily command", e);
-            event.getHook().sendMessageEmbeds(
-                    EmbedUtils.errorEmbed("Error", "An error occurred while claiming your daily reward.")
-            ).queue();
-        }
-    }
-    
-    /**
-     * Calculate streak bonus based on consecutive days
-     */
-    private int calculateStreakBonus(int currentStreak) {
-        // Calculate the next day's streak (current + 1)
-        int nextStreak = Math.min(currentStreak + 1, MAX_STREAK_DAYS);
-        
-        // Bonus increases with streak days
-        return (nextStreak * MAX_STREAK_BONUS) / MAX_STREAK_DAYS;
-    }
-    
-    /**
-     * Display the reward message
-     */
-    private void displayRewardMessage(SlashCommandInteractionEvent event, Player player, 
-                                     int baseAmount, int streakBonus, int totalAmount, int streak) {
-        StringBuilder description = new StringBuilder();
-        
-        description.append("💰 **Daily Reward**: `").append(formatAmount(baseAmount)).append(" coins`\n");
-        
-        if (streakBonus > 0) {
-            description.append("🔥 **Streak Bonus**: `").append(formatAmount(streakBonus)).append(" coins`\n");
-        }
-        
-        description.append("\n**Total Reward**: `").append(formatAmount(totalAmount)).append(" coins`\n\n");
-        
-        description.append("Your streak is now **").append(streak).append(" day")
-                  .append(streak != 1 ? "s" : "").append("**! ");
-        
-        if (streak < MAX_STREAK_DAYS) {
-            int nextBonus = calculateStreakBonus(streak);
-            description.append("Come back tomorrow for a `").append(formatAmount(nextBonus))
-                      .append(" coin` streak bonus!");
-        } else {
-            description.append("You've reached the maximum streak bonus!");
-        }
-        
-        description.append("\n\n**New Balance**: `")
-                  .append(formatAmount(player.getCurrency().getCoins())).append(" coins`");
-        
-        event.getHook().sendMessageEmbeds(
-                EmbedUtils.customEmbed("Daily Reward Claimed", description.toString(), Color.YELLOW)
-        ).queue();
-    }
-    
-    /**
-     * Format a currency amount with commas
-     */
-    private String formatAmount(long amount) {
-        return String.format("%,d", amount);
+        return Commands.slash(getName(), getDescription());
     }
 }

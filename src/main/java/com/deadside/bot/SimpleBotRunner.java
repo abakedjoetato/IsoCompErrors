@@ -1,10 +1,3 @@
-#!/bin/bash
-
-# Create a simple Main class that works
-echo "Creating simplified Main class for testing Discord bot functionality..."
-
-mkdir -p src/main/java/com/deadside/bot/
-cat > src/main/java/com/deadside/bot/SimpleBotRunner.java << EOF
 package com.deadside.bot;
 
 import net.dv8tion.jda.api.JDA;
@@ -68,29 +61,3 @@ public class SimpleBotRunner extends ListenerAdapter {
         }
     }
 }
-EOF
-
-# Create necessary directories
-mkdir -p target/classes
-mkdir -p logs
-mkdir -p temp
-
-# Build classpath string with all libraries in the lib directory
-CLASSPATH="target/classes"
-for jar in lib/*.jar; do
-  CLASSPATH="$CLASSPATH:$jar"
-done
-
-# Compile the simplified bot
-echo "Compiling simplified bot..."
-javac -d target/classes -cp "$CLASSPATH" src/main/java/com/deadside/bot/SimpleBotRunner.java
-
-# Check if compilation was successful
-if [ $? -eq 0 ]; then
-  echo "Compilation successful! Starting DeadsideBot..."
-  # Run the simplified bot
-  java -cp "$CLASSPATH" com.deadside.bot.SimpleBotRunner
-else
-  echo "Compilation failed. Please check the error messages above."
-  exit 1
-fi

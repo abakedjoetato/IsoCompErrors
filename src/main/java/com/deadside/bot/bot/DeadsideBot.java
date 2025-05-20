@@ -1,159 +1,99 @@
 package com.deadside.bot.bot;
 
 import com.deadside.bot.commands.CommandManager;
-import com.deadside.bot.config.Config;
-import com.deadside.bot.db.models.GameServer;
+import com.deadside.bot.commands.ICommand;
 import com.deadside.bot.db.repositories.GameServerRepository;
 import com.deadside.bot.db.repositories.PlayerRepository;
-import com.deadside.bot.listeners.ButtonListener;
 import com.deadside.bot.listeners.CommandListener;
 import com.deadside.bot.listeners.ModalListener;
-import com.deadside.bot.listeners.StringSelectMenuListener;
-import com.deadside.bot.parsers.DeadsideCsvParser;
-import com.deadside.bot.parsers.DeadsideLogParser;
-import com.deadside.bot.schedulers.KillfeedScheduler;
-import com.deadside.bot.schedulers.ServerStatsScheduler;
-import com.deadside.bot.sftp.SftpConnector;
+import com.deadside.bot.utils.Config;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
-import net.dv8tion.jda.api.OnlineStatus;
 import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 /**
- * Main DeadsideBot implementation
+ * Main bot implementation that handles Discord connection
  */
 public class DeadsideBot {
-    private static final Logger logger = LoggerFactory.getLogger(DeadsideBot.class);
+    private static final Logger logger = Logger.getLogger(DeadsideBot.class.getName());
     private final String token;
     private JDA jda;
     private CommandManager commandManager;
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
+    private final Config config;
+    private final GameServerRepository serverRepository;
+    private final PlayerRepository playerRepository;
+    private final AutoStartupCleanup autoStartupCleanup;
     
-    /**
-     * Constructor
-     * @param token Discord bot token
-     */
     public DeadsideBot(String token) {
         this.token = token;
+        this.config = Config.getInstance();
+        this.serverRepository = new GameServerRepository();
+        this.playerRepository = new PlayerRepository();
+        this.autoStartupCleanup = new AutoStartupCleanup(config);
     }
     
     /**
-     * Start the bot
+     * Initialize and start the bot
+     * @throws Exception If an error occurs during startup
      */
-    public void start() {
-        try {
-            // Create repositories
-            GameServerRepository gameServerRepository = new GameServerRepository();
-            PlayerRepository playerRepository = new PlayerRepository();
-            
-            // Create SFTP connector
-            SftpConnector sftpConnector = new SftpConnector();
-            
-            // Build JDA
-            jda = JDABuilder.createDefault(token)
-                .setStatus(OnlineStatus.ONLINE)
+    public void start() throws Exception {
+        logger.info("Starting DeadsideBot...");
+        
+        // Run startup cleanup if enabled
+        autoStartupCleanup.runIfEnabled();
+        
+        // Build the JDA instance
+        jda = JDABuilder.createDefault(token)
                 .setActivity(Activity.playing("Deadside"))
                 .enableIntents(
-                    GatewayIntent.GUILD_MEMBERS,
-                    GatewayIntent.GUILD_MESSAGES,
-                    GatewayIntent.GUILD_VOICE_STATES,
-                    GatewayIntent.GUILD_EMOJIS_AND_STICKERS,
-                    GatewayIntent.DIRECT_MESSAGES,
-                    GatewayIntent.MESSAGE_CONTENT
+                        GatewayIntent.GUILD_MEMBERS,
+                        GatewayIntent.GUILD_PRESENCES,
+                        GatewayIntent.GUILD_MESSAGES,
+                        GatewayIntent.MESSAGE_CONTENT
                 )
                 .setMemberCachePolicy(MemberCachePolicy.ALL)
                 .setChunkingFilter(ChunkingFilter.ALL)
                 .build();
-            
-            // Create parser instances
-            DeadsideCsvParser csvParser = new DeadsideCsvParser(jda, sftpConnector, playerRepository, gameServerRepository);
-            DeadsideLogParser logParser = new DeadsideLogParser(jda, gameServerRepository, sftpConnector);
-            
-            // Create command manager and initialize commands
-            commandManager = new CommandManager(jda, gameServerRepository, playerRepository, sftpConnector, csvParser, logParser);
-            
-            // Register commands with Discord API
-            logger.info("Registering commands with Discord API");
-            commandManager.registerCommands();
-            
-            // Add event listeners
-            jda.addEventListener(
-                new CommandListener(commandManager),
-                new ButtonListener(),
-                new StringSelectMenuListener(),
-                new ModalListener()
-            );
-            
-            // Wait for JDA to be ready
-            jda.awaitReady();
-            logger.info("JDA initialized and connected to Discord gateway");
-            
-            // Start schedulers
-            startSchedulers();
-            
-            logger.info("Bot is now online and all systems operational!");
-        } catch (Exception e) {
-            logger.error("Error starting bot", e);
-            throw new RuntimeException("Failed to start bot", e);
-        }
+        
+        // Initialize command manager
+        commandManager = new CommandManager(jda, config);
+        
+        // Register event listeners
+        jda.addEventListener(new CommandListener(commandManager));
+        jda.addEventListener(new ModalListener());
+        
+        // Register all slash commands with Discord
+        List<ICommand> commands = commandManager.getAllCommands();
+        jda.updateCommands().addCommands(commandManager.getCommandData()).queue(
+                success -> logger.info("Successfully registered " + commands.size() + " slash commands"),
+                failure -> logger.log(Level.SEVERE, "Failed to register slash commands", failure)
+        );
+        
+        logger.info("Bot started successfully!");
     }
     
     /**
-     * Start all schedulers for automated tasks
-     */
-    private void startSchedulers() {
-        try {
-            logger.info("Starting schedulers...");
-            
-            // Get refresh intervals from config
-            int statsInterval = 60; // Default 60 seconds
-            int killfeedInterval = 30; // Default 30 seconds
-            
-            // Start killfeed scheduler
-            KillfeedScheduler killfeedScheduler = new KillfeedScheduler(jda);
-            scheduler.scheduleAtFixedRate(killfeedScheduler, 5, killfeedInterval, TimeUnit.SECONDS);
-            logger.info("Killfeed scheduler started with interval {} seconds", killfeedInterval);
-            
-            // Start server stats scheduler
-            ServerStatsScheduler serverStatsScheduler = new ServerStatsScheduler(jda);
-            scheduler.scheduleAtFixedRate(serverStatsScheduler, 10, statsInterval, TimeUnit.SECONDS);
-            logger.info("Server stats scheduler started with interval {} seconds", statsInterval);
-        } catch (Exception e) {
-            logger.error("Error starting schedulers", e);
-        }
-    }
-    
-    /**
-     * Shutdown the bot
+     * Shut down the bot
      */
     public void shutdown() {
-        if (scheduler != null) {
-            logger.info("Shutting down schedulers...");
-            scheduler.shutdown();
-            try {
-                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
-                    scheduler.shutdownNow();
-                }
-            } catch (InterruptedException e) {
-                scheduler.shutdownNow();
-                Thread.currentThread().interrupt();
-            }
-        }
-        
         if (jda != null) {
-            logger.info("Shutting down JDA...");
             jda.shutdown();
+            logger.info("Bot has been shut down");
         }
-        
-        logger.info("Bot shutdown complete");
+    }
+    
+    /**
+     * Get the JDA instance
+     * @return JDA instance
+     */
+    public JDA getJda() {
+        return jda;
     }
 }

@@ -2,13 +2,10 @@ package com.deadside.bot.listeners;
 
 import com.deadside.bot.commands.CommandManager;
 import com.deadside.bot.commands.ICommand;
-import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.List;
 
 /**
  * Listener for slash command interactions
@@ -23,56 +20,28 @@ public class CommandListener extends ListenerAdapter {
     
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        logger.info("Command received: {}", event.getName());
+        String commandName = event.getName();
+        String userName = event.getUser().getName();
+        
+        logger.info("Received command '{}' from user {}", commandName, userName);
         
         try {
-            String commandName = event.getName();
+            // Get the command from the manager
             ICommand command = commandManager.getCommandByName(commandName);
             
             if (command != null) {
+                // Execute the command
                 command.execute(event);
+                logger.debug("Command '{}' executed for user {}", commandName, userName);
             } else {
+                // Command not found
                 event.reply("Unknown command: " + commandName).setEphemeral(true).queue();
-                logger.warn("Unknown command executed: {}", commandName);
+                logger.warn("Unknown command '{}' attempted by user {}", commandName, userName);
             }
         } catch (Exception e) {
-            logger.error("Error executing command", e);
-            String errorMessage = "An error occurred while executing the command";
-            if (e.getMessage() != null) {
-                errorMessage += ": " + e.getMessage();
-            }
-            
-            try {
-                if (event.isAcknowledged()) {
-                    event.getHook().sendMessage(errorMessage).setEphemeral(true).queue();
-                } else {
-                    event.reply(errorMessage).setEphemeral(true).queue();
-                }
-            } catch (Exception ex) {
-                logger.error("Error sending error message", ex);
-            }
-        }
-    }
-    
-    @Override
-    public void onCommandAutoCompleteInteraction(CommandAutoCompleteInteractionEvent event) {
-        logger.debug("Autocomplete request: {} - {}", 
-            event.getName(), event.getFocusedOption().getName());
-            
-        try {
-            String commandName = event.getName();
-            ICommand command = commandManager.getCommandByName(commandName);
-            
-            if (command != null) {
-                List<net.dv8tion.jda.api.interactions.commands.Command.Choice> choices = 
-                    command.handleAutoComplete(event);
-                    
-                if (choices != null && !choices.isEmpty()) {
-                    event.replyChoices(choices).queue();
-                }
-            }
-        } catch (Exception e) {
-            logger.error("Error handling autocomplete", e);
+            // Handle any errors during command execution
+            logger.error("Error executing command '{}' for user {}: {}", commandName, userName, e.getMessage(), e);
+            event.reply("An error occurred while processing your command. Please try again later.").setEphemeral(true).queue();
         }
     }
 }

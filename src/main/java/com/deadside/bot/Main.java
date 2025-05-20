@@ -2,6 +2,7 @@ package com.deadside.bot;
 
 import com.deadside.bot.bot.DeadsideBot;
 import com.deadside.bot.db.MongoDBConnection;
+import com.deadside.bot.utils.Config;
 
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -10,44 +11,40 @@ import java.util.logging.Logger;
  * Main entry point for the Deadside Discord Bot
  */
 public class Main {
-    private static final Logger LOGGER = Logger.getLogger(Main.class.getName());
+    private static final Logger logger = Logger.getLogger(Main.class.getName());
     
     public static void main(String[] args) {
         try {
-            LOGGER.info("Starting Deadside Discord Bot...");
+            logger.info("Starting Deadside Discord Bot...");
             
-            // Get Discord token from environment variable
-            String discordToken = System.getenv("DISCORD_TOKEN");
-            // Check for BOT_TOKEN if DISCORD_TOKEN is not set
-            if (discordToken == null || discordToken.isEmpty()) {
-                discordToken = System.getenv("BOT_TOKEN");
-                if (discordToken == null || discordToken.isEmpty()) {
-                    // For development purposes only, use a test token
-                    LOGGER.warning("DISCORD_TOKEN environment variable is not set. Using a placeholder for compilation testing only.");
-                    discordToken = "test_token_for_compilation_only";
-                }
-            }
-            
-            // Get MongoDB URI from environment variable
-            String mongoUri = System.getenv("MONGO_URI");
-            if (mongoUri == null || mongoUri.isEmpty()) {
-                // For development purposes only
-                LOGGER.warning("MONGO_URI environment variable not set. Using a local MongoDB URI for testing compilation.");
-                mongoUri = "mongodb://localhost:27017/deadsidebot";
-            }
+            // Initialize configuration
+            Config config = Config.getInstance();
             
             // Initialize MongoDB connection
-            LOGGER.info("Initializing MongoDB connection...");
-            MongoDBConnection.initialize(mongoUri);
+            String mongoUri = System.getenv("MONGO_URI");
+            if (mongoUri == null || mongoUri.isEmpty()) {
+                logger.severe("MongoDB URI environment variable (MONGO_URI) is not set");
+                return;
+            }
             
-            // Start the bot
-            DeadsideBot bot = new DeadsideBot(discordToken);
+            MongoDBConnection.initialize(mongoUri);
+            logger.info("MongoDB connection initialized");
+            
+            // Get Discord token from environment variable
+            String token = System.getenv("DISCORD_TOKEN");
+            if (token == null || token.isEmpty()) {
+                logger.severe("Discord token environment variable (DISCORD_TOKEN) is not set");
+                return;
+            }
+            
+            // Initialize and start the bot
+            DeadsideBot bot = new DeadsideBot(token);
             bot.start();
             
-            LOGGER.info("Bot started successfully");
+            logger.info("Bot started successfully");
+            
         } catch (Exception e) {
-            LOGGER.log(Level.SEVERE, "Failed to start bot", e);
-            e.printStackTrace();
+            logger.log(Level.SEVERE, "Failed to start the bot", e);
         }
     }
 }
