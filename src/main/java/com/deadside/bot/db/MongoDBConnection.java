@@ -1,86 +1,115 @@
 package com.deadside.bot.db;
 
+import com.mongodb.ConnectionString;
+import com.mongodb.MongoClientSettings;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import org.bson.Document;
+import org.bson.codecs.configuration.CodecRegistry;
+import org.bson.codecs.pojo.PojoCodecProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import static org.bson.codecs.configuration.CodecRegistries.fromProviders;
+import static org.bson.codecs.configuration.CodecRegistries.fromRegistries;
 
 /**
  * MongoDB connection manager
  */
 public class MongoDBConnection {
-    private static final Logger logger = Logger.getLogger(MongoDBConnection.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(MongoDBConnection.class);
     private static MongoClient mongoClient;
     private static MongoDatabase database;
-    private static String databaseName = "deadside_bot";
-    
+    private static boolean initialized = false;
+    private static String connectionString;
+
     /**
      * Initialize the MongoDB connection
-     * @param mongoUri The MongoDB connection URI
+     * @param mongoUri MongoDB connection URI
      */
     public static void initialize(String mongoUri) {
+        if (initialized) {
+            logger.warn("MongoDB connection already initialized");
+            return;
+        }
+
         try {
-            logger.info("Initializing MongoDB connection...");
+            logger.info("Initializing MongoDB connection");
+            connectionString = mongoUri;
             
-            // Close any existing connection
-            if (mongoClient != null) {
-                mongoClient.close();
-            }
-            
-            // Create new connection
-            mongoClient = MongoClients.create(mongoUri);
-            database = mongoClient.getDatabase(databaseName);
-            
-            logger.info("MongoDB connection initialized successfully");
+            // Configure codec registry for POJO support
+            CodecRegistry pojoCodecRegistry = fromRegistries(
+                    MongoClientSettings.getDefaultCodecRegistry(),
+                    fromProviders(PojoCodecProvider.builder().automatic(true).build())
+            );
+
+            // Configure client settings
+            MongoClientSettings settings = MongoClientSettings.builder()
+                    .applyConnectionString(new ConnectionString(mongoUri))
+                    .codecRegistry(pojoCodecRegistry)
+                    .build();
+
+            // Create client and get database
+            mongoClient = MongoClients.create(settings);
+            database = mongoClient.getDatabase("deadside");
+            initialized = true;
+            logger.info("MongoDB connection successfully initialized");
         } catch (Exception e) {
-            logger.log(Level.SEVERE, "Failed to initialize MongoDB connection", e);
+            logger.error("Failed to initialize MongoDB connection", e);
             throw e;
         }
     }
-    
+
     /**
-     * Get the MongoDB database
-     * @return The MongoDB database
+     * Get the MongoDB database instance
+     * @return MongoDB database
      */
     public static MongoDatabase getDatabase() {
-        if (database == null) {
-            throw new IllegalStateException("MongoDB connection not initialized. Call initialize() first.");
+        if (!initialized) {
+            logger.error("MongoDB connection not initialized");
+            throw new IllegalStateException("MongoDB connection not initialized");
         }
         return database;
     }
-    
+
     /**
-     * Get the MongoDB client
-     * @return The MongoDB client
+     * Get a collection from the database
+     * @param collectionName Name of the collection
+     * @return MongoDB collection
      */
-    public static MongoClient getClient() {
-        if (mongoClient == null) {
-            throw new IllegalStateException("MongoDB connection not initialized. Call initialize() first.");
-        }
-        return mongoClient;
+    public static MongoCollection<Document> getCollection(String collectionName) {
+        return getDatabase().getCollection(collectionName);
     }
-    
+
     /**
-     * Set the database name
-     * @param name The database name
+     * Get a typed collection from the database
+     * @param collectionName Name of the collection
+     * @param documentClass Class of the document
+     * @param <T> Type of the document
+     * @return MongoDB collection
      */
-    public static void setDatabaseName(String name) {
-        databaseName = name;
-        if (mongoClient != null) {
-            database = mongoClient.getDatabase(databaseName);
-        }
+    public static <T> MongoCollection<T> getCollection(String collectionName, Class<T> documentClass) {
+        return getDatabase().getCollection(collectionName, documentClass);
     }
-    
+
     /**
      * Close the MongoDB connection
      */
     public static void close() {
         if (mongoClient != null) {
+            logger.info("Closing MongoDB connection");
             mongoClient.close();
-            mongoClient = null;
-            database = null;
-            logger.info("MongoDB connection closed");
+            initialized = false;
         }
+    }
+
+    /**
+     * Check if the MongoDB connection is initialized
+     * @return true if initialized, false otherwise
+     */
+    public static boolean isInitialized() {
+        return initialized;
     }
 }

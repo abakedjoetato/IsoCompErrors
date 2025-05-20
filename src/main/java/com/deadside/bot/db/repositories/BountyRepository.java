@@ -2,11 +2,13 @@ package com.deadside.bot.db.repositories;
 
 import com.deadside.bot.db.MongoDBConnection;
 import com.deadside.bot.db.models.Bounty;
+import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Sorts;
 import com.mongodb.client.result.DeleteResult;
-import org.bson.conversions.Bson;
+import com.mongodb.client.result.UpdateResult;
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,328 +17,254 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Repository for managing bounties with proper data isolation
+ * Repository for Bounty entity
  */
 public class BountyRepository {
     private static final Logger logger = LoggerFactory.getLogger(BountyRepository.class);
     private static final String COLLECTION_NAME = "bounties";
-    
-    private MongoCollection<Bounty> collection;
-    
-    public BountyRepository() {
-        try {
-            this.collection = MongoDBConnection.getInstance().getDatabase()
-                .getCollection(COLLECTION_NAME, Bounty.class);
-        } catch (IllegalStateException e) {
-            // This can happen during early initialization - handle gracefully
-            logger.warn("MongoDB connection not initialized yet. Usage will be deferred until initialization.");
-        }
-    }
-    
+
     /**
-     * Get the MongoDB collection, initializing if needed
+     * Find bounty by ID
+     * @param id Bounty ID
+     * @return Bounty or null if not found
      */
-    private MongoCollection<Bounty> getCollection() {
-        if (collection == null) {
-            try {
-                // Try to get the collection now that MongoDB should be initialized
-                this.collection = MongoDBConnection.getInstance().getDatabase()
-                    .getCollection(COLLECTION_NAME, Bounty.class);
-            } catch (Exception e) {
-                logger.error("Failed to initialize bounty collection", e);
-            }
-        }
-        return collection;
-    }
-    
-    /**
-     * Save a bounty with proper isolation checks
-     */
-    public void save(Bounty bounty) {
+    public Bounty findById(String id) {
         try {
-            // Ensure bounty has valid isolation fields
-            if (bounty.getGuildId() <= 0 || bounty.getServerId() == null || bounty.getServerId().isEmpty()) {
-                logger.error("Attempted to save bounty without proper isolation fields");
-                return;
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = collection.find(Filters.eq("_id", new ObjectId(id))).first();
+            
+            if (doc == null) {
+                return null;
             }
             
-            if (bounty.getId() == null) {
-                getCollection().insertOne(bounty);
-                logger.debug("Inserted new bounty with proper isolation (Guild={}, Server={})",
-                    bounty.getGuildId(), bounty.getServerId());
-            } else {
-                getCollection().replaceOne(
-                    Filters.eq("_id", bounty.getId()),
-                    bounty
-                );
-                logger.debug("Updated bounty with isolation (Guild={}, Server={})",
-                    bounty.getGuildId(), bounty.getServerId());
-            }
+            return documentToBounty(doc);
         } catch (Exception e) {
-            logger.error("Error saving bounty", e);
-        }
-    }
-    
-    /**
-     * Find active bounties for a target player with proper isolation
-     */
-    public List<Bounty> findActiveByTargetIdAndGuildIdAndServerId(String targetId, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("targetId", targetId),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId),
-                Filters.eq("active", true)
-            );
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding active bounties by target ID with isolation: {} (Guild={}, Server={})",
-                targetId, guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find active bounties placed by a user with proper isolation
-     */
-    public List<Bounty> findActiveByPlacerIdAndGuildIdAndServerId(long placerId, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("placerId", placerId),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId),
-                Filters.eq("active", true)
-            );
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding active bounties by placer ID with isolation: {} (Guild={}, Server={})",
-                placerId, guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find all active bounties for a guild and server
-     */
-    public List<Bounty> findAllActiveByGuildIdAndServerId(long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId),
-                Filters.eq("active", true)
-            );
-            return getCollection().find(filter)
-                .sort(Sorts.descending("amount"))
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding all active bounties by guild and server: Guild={}, Server={}",
-                guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find top bounties by amount for a guild and server
-     */
-    public List<Bounty> findTopBountiesByGuildIdAndServerId(long guildId, String serverId, int limit) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId),
-                Filters.eq("active", true)
-            );
-            return getCollection().find(filter)
-                .sort(Sorts.descending("amount"))
-                .limit(limit)
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding top bounties by guild and server: Guild={}, Server={}",
-                guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find a bounty by ID with proper isolation
-     */
-    public Bounty findByIdWithIsolation(ObjectId id, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("_id", id),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding bounty by ID with isolation: {} (Guild={}, Server={})",
-                id, guildId, serverId, e);
+            logger.error("Error finding bounty by ID: {}", id, e);
             return null;
         }
     }
-    
+
     /**
-     * Delete a bounty by ID with proper isolation
+     * Find all active bounties for a guild
+     * @param guildId Guild ID
+     * @return List of active bounties
      */
-    public boolean deleteByIdWithIsolation(ObjectId id, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("_id", id),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            DeleteResult result = getCollection().deleteOne(filter);
-            return result.getDeletedCount() > 0;
-        } catch (Exception e) {
-            logger.error("Error deleting bounty by ID with isolation: {} (Guild={}, Server={})",
-                id, guildId, serverId, e);
-            return false;
-        }
-    }
-    
-    /**
-     * Get all bounties using isolation-aware approach
-     * This method properly respects isolation boundaries while retrieving all bounties
-     * @return List of all bounties with proper isolation boundaries respected
-     */
-    public List<Bounty> getAllBounties() {
-        List<Bounty> allBounties = new ArrayList<>();
+    public List<Bounty> findActiveByGuildId(long guildId) {
+        List<Bounty> bounties = new ArrayList<>();
         
         try {
-            // Get distinct guild IDs to maintain isolation boundaries
-            List<Long> distinctGuildIds = getDistinctGuildIds();
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            FindIterable<Document> docs = collection.find(
+                Filters.and(
+                    Filters.eq("guildId", guildId),
+                    Filters.eq("completed", false),
+                    Filters.eq("active", true)
+                )
+            ).sort(Sorts.descending("amount"));
             
-            // Process each guild with proper isolation context
-            for (Long guildId : distinctGuildIds) {
-                if (guildId == null || guildId <= 0) continue;
+            for (Document doc : docs) {
+                bounties.add(documentToBounty(doc));
+            }
+        } catch (Exception e) {
+            logger.error("Error finding active bounties by guild ID: {}", guildId, e);
+        }
+        
+        return bounties;
+    }
+
+    /**
+     * Find all active bounties for a target player
+     * @param targetId Target player ID
+     * @return List of active bounties on this player
+     */
+    public List<Bounty> findActiveByTargetId(String targetId) {
+        List<Bounty> bounties = new ArrayList<>();
+        
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            FindIterable<Document> docs = collection.find(
+                Filters.and(
+                    Filters.eq("targetId", targetId),
+                    Filters.eq("completed", false),
+                    Filters.eq("active", true)
+                )
+            ).sort(Sorts.descending("amount"));
+            
+            for (Document doc : docs) {
+                bounties.add(documentToBounty(doc));
+            }
+        } catch (Exception e) {
+            logger.error("Error finding active bounties by target ID: {}", targetId, e);
+        }
+        
+        return bounties;
+    }
+
+    /**
+     * Find all bounties issued by a player
+     * @param issuerId Issuer player ID
+     * @return List of bounties issued by this player
+     */
+    public List<Bounty> findByIssuerId(String issuerId) {
+        List<Bounty> bounties = new ArrayList<>();
+        
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            FindIterable<Document> docs = collection.find(
+                Filters.and(
+                    Filters.eq("issuerId", issuerId),
+                    Filters.eq("active", true)
+                )
+            ).sort(Sorts.descending("issuedTimestamp"));
+            
+            for (Document doc : docs) {
+                bounties.add(documentToBounty(doc));
+            }
+        } catch (Exception e) {
+            logger.error("Error finding bounties by issuer ID: {}", issuerId, e);
+        }
+        
+        return bounties;
+    }
+
+    /**
+     * Save a bounty (insert or update)
+     * @param bounty Bounty to save
+     * @return Saved bounty
+     */
+    public Bounty save(Bounty bounty) {
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = bountyToDocument(bounty);
+            
+            if (bounty.getId() == null) {
+                // Insert new bounty
+                collection.insertOne(doc);
                 
-                // Set isolation context for this guild
-                com.deadside.bot.utils.GuildIsolationManager.getInstance().setContext(guildId, null);
+                // Get the ID
+                bounty.setId(doc.getObjectId("_id").toString());
+            } else {
+                // Update existing bounty
+                UpdateResult result = collection.replaceOne(
+                    Filters.eq("_id", new ObjectId(bounty.getId())),
+                    doc
+                );
                 
-                try {
-                    // Get bounties for this guild with proper isolation boundary
-                    List<Bounty> guildBounties = findAllByGuildId(guildId);
-                    allBounties.addAll(guildBounties);
-                } finally {
-                    // Always clear context when done
-                    com.deadside.bot.utils.GuildIsolationManager.getInstance().clearContext();
+                if (result.getMatchedCount() == 0) {
+                    logger.warn("No bounty found with ID: {}", bounty.getId());
+                    return null;
                 }
             }
             
-            logger.debug("Retrieved all bounties using isolation-aware approach: {} total records", allBounties.size());
+            return bounty;
         } catch (Exception e) {
-            logger.error("Error getting all bounties using isolation-aware approach", e);
+            logger.error("Error saving bounty for target: {}", bounty.getTargetName(), e);
+            return null;
         }
-        
-        return allBounties;
     }
-    
+
     /**
-     * Find all bounties by guild ID and server ID with proper isolation
-     * This method supports the Long parameter type required by isolation framework
-     * @param guildId The Discord guild ID for isolation
-     * @param serverId The game server ID for isolation
-     * @return List of bounties for the specified guild and server
+     * Mark a bounty as completed
+     * @param bountyId Bounty ID
+     * @param completedById Player ID who completed the bounty
+     * @param completedByName Player name who completed the bounty
+     * @return true if completed, false otherwise
      */
-    public List<Bounty> findAllByGuildId(Long guildId) {
+    public boolean completeBounty(String bountyId, String completedById, String completedByName) {
         try {
-            if (guildId == null || guildId <= 0) {
-                logger.warn("Attempted to find bounties with invalid guild ID: {}", guildId);
-                return new ArrayList<>();
-            }
+            Bounty bounty = findById(bountyId);
             
-            Bson filter = Filters.eq("guildId", guildId);
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding bounties by guild ID: {}", guildId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    public List<Bounty> findAllByGuildIdAndServerId(Long guildId, String serverId) {
-        try {
-            if (guildId == null || guildId <= 0) {
-                logger.warn("Attempted to find bounties with invalid guild ID: {}", guildId);
-                return new ArrayList<>();
-            }
-            if (serverId == null || serverId.isEmpty()) {
-                logger.warn("Attempted to find bounties with invalid server ID: {}", serverId);
-                return new ArrayList<>();
-            }
-            
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding bounties by guild ID and server ID: {} / {}", guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Get all distinct guild IDs from bounties collection
-     * This is useful for isolation-aware operations across multiple guilds
-     * @return List of distinct guild IDs
-     */
-    public List<Long> getDistinctGuildIds() {
-        try {
-            List<Long> guildIds = new ArrayList<>();
-            getCollection().distinct("guildId", Long.class).into(guildIds);
-            return guildIds;
-        } catch (Exception e) {
-            logger.error("Error getting distinct guild IDs from bounties collection", e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Delete all bounties by guild and server - used for data cleanup
-     */
-    public long deleteAllByGuildIdAndServerId(long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            DeleteResult result = getCollection().deleteMany(filter);
-            logger.info("Deleted {} bounties from Guild={}, Server={}", 
-                result.getDeletedCount(), guildId, serverId);
-            return result.getDeletedCount();
-        } catch (Exception e) {
-            logger.error("Error deleting bounties by guild and server", e);
-            return 0;
-        }
-    }
-    
-    /**
-     * Mark a bounty as claimed with proper isolation
-     */
-    public boolean markAsClaimed(ObjectId id, String claimerId, String claimerName, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("_id", id),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId),
-                Filters.eq("active", true)
-            );
-            
-            Bounty bounty = getCollection().find(filter).first();
             if (bounty == null) {
+                logger.warn("No bounty found with ID: {}", bountyId);
                 return false;
             }
             
-            bounty.setActive(false);
-            bounty.setClaimerId(claimerId);
-            bounty.setClaimerName(claimerName);
-            bounty.setClaimedAt(System.currentTimeMillis());
+            if (bounty.isCompleted()) {
+                logger.warn("Bounty already completed: {}", bountyId);
+                return false;
+            }
             
-            getCollection().replaceOne(filter, bounty);
-            return true;
+            bounty.complete(completedById, completedByName);
+            return save(bounty) != null;
         } catch (Exception e) {
-            logger.error("Error marking bounty as claimed with isolation: {} (Guild={}, Server={})",
-                id, guildId, serverId, e);
+            logger.error("Error completing bounty: {}", bountyId, e);
             return false;
         }
+    }
+
+    /**
+     * Delete a bounty
+     * @param id Bounty ID
+     * @return true if deleted, false otherwise
+     */
+    public boolean delete(String id) {
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            DeleteResult result = collection.deleteOne(Filters.eq("_id", new ObjectId(id)));
+            
+            return result.getDeletedCount() > 0;
+        } catch (Exception e) {
+            logger.error("Error deleting bounty with ID: {}", id, e);
+            return false;
+        }
+    }
+
+    /**
+     * Convert document to bounty
+     * @param doc MongoDB document
+     * @return Bounty object
+     */
+    private Bounty documentToBounty(Document doc) {
+        Bounty bounty = new Bounty();
+        
+        bounty.setId(doc.getObjectId("_id").toString());
+        bounty.setTargetId(doc.getString("targetId"));
+        bounty.setTargetName(doc.getString("targetName"));
+        bounty.setIssuerId(doc.getString("issuerId"));
+        bounty.setIssuerName(doc.getString("issuerName"));
+        bounty.setAmount(doc.getLong("amount"));
+        bounty.setIssuedTimestamp(doc.getLong("issuedTimestamp"));
+        bounty.setCompletedTimestamp(doc.getLong("completedTimestamp", 0));
+        bounty.setCompletedById(doc.getString("completedById"));
+        bounty.setCompletedByName(doc.getString("completedByName"));
+        bounty.setCompleted(doc.getBoolean("completed", false));
+        bounty.setServerId(doc.getString("serverId"));
+        bounty.setServerName(doc.getString("serverName"));
+        bounty.setGuildId(doc.getLong("guildId"));
+        bounty.setNotes(doc.getString("notes"));
+        bounty.setActive(doc.getBoolean("active", true));
+        
+        return bounty;
+    }
+
+    /**
+     * Convert bounty to document
+     * @param bounty Bounty object
+     * @return MongoDB document
+     */
+    private Document bountyToDocument(Bounty bounty) {
+        Document doc = new Document();
+        
+        if (bounty.getId() != null) {
+            doc.append("_id", new ObjectId(bounty.getId()));
+        }
+        
+        doc.append("targetId", bounty.getTargetId())
+           .append("targetName", bounty.getTargetName())
+           .append("issuerId", bounty.getIssuerId())
+           .append("issuerName", bounty.getIssuerName())
+           .append("amount", bounty.getAmount())
+           .append("issuedTimestamp", bounty.getIssuedTimestamp())
+           .append("completedTimestamp", bounty.getCompletedTimestamp())
+           .append("completedById", bounty.getCompletedById())
+           .append("completedByName", bounty.getCompletedByName())
+           .append("completed", bounty.isCompleted())
+           .append("serverId", bounty.getServerId())
+           .append("serverName", bounty.getServerName())
+           .append("guildId", bounty.getGuildId())
+           .append("notes", bounty.getNotes())
+           .append("active", bounty.isActive());
+        
+        return doc;
     }
 }

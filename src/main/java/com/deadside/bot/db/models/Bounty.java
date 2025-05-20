@@ -1,134 +1,173 @@
 package com.deadside.bot.db.models;
 
-import org.bson.types.ObjectId;
-
 /**
- * Represents a bounty with proper isolation between guilds and servers
+ * Represents a bounty on a player
  */
 public class Bounty {
-    private ObjectId id;             // MongoDB document ID
-    private long placerId;           // Discord user ID of the bounty placer
-    private String placerName;       // Name of the bounty placer
-    private String targetId;         // Game ID of the bounty target
-    private String targetName;       // Name of the bounty target
-    private long amount;             // Bounty amount in coins
-    private long placedAt;           // Timestamp when the bounty was placed
-    private long guildId;            // Discord guild (server) ID for isolation
-    private String serverId;         // Game server ID for isolation
-    private boolean active;          // Whether the bounty is active or claimed
-    private String claimerId;        // Game ID of the player who claimed the bounty (if claimed)
-    private String claimerName;      // Name of the player who claimed the bounty (if claimed)
-    private long claimedAt;          // Timestamp when the bounty was claimed (if claimed)
-    
+    private String id;
+    private String targetId;
+    private String targetName;
+    private String issuerId;
+    private String issuerName;
+    private long amount;
+    private long issuedTimestamp;
+    private long completedTimestamp;
+    private String completedById;
+    private String completedByName;
+    private boolean completed;
+    private String serverId;
+    private String serverName;
+    private long guildId;
+    private String notes;
+    private boolean active;
+
     public Bounty() {
-        // Required for MongoDB POJO codec
-        this.placedAt = System.currentTimeMillis();
+        this.issuedTimestamp = System.currentTimeMillis();
+        this.completed = false;
         this.active = true;
     }
-    
-    // Getters and Setters
-    
-    public ObjectId getId() {
+
+    public Bounty(String targetId, String targetName, String issuerId, String issuerName, long amount) {
+        this();
+        this.targetId = targetId;
+        this.targetName = targetName;
+        this.issuerId = issuerId;
+        this.issuerName = issuerName;
+        this.amount = amount;
+    }
+
+    public String getId() {
         return id;
     }
-    
-    public void setId(ObjectId id) {
+
+    public void setId(String id) {
         this.id = id;
     }
-    
-    public long getPlacerId() {
-        return placerId;
-    }
-    
-    public void setPlacerId(long placerId) {
-        this.placerId = placerId;
-    }
-    
-    public String getPlacerName() {
-        return placerName;
-    }
-    
-    public void setPlacerName(String placerName) {
-        this.placerName = placerName;
-    }
-    
+
     public String getTargetId() {
         return targetId;
     }
-    
+
     public void setTargetId(String targetId) {
         this.targetId = targetId;
     }
-    
+
     public String getTargetName() {
         return targetName;
     }
-    
+
     public void setTargetName(String targetName) {
         this.targetName = targetName;
     }
-    
+
+    public String getIssuerId() {
+        return issuerId;
+    }
+
+    public void setIssuerId(String issuerId) {
+        this.issuerId = issuerId;
+    }
+
+    public String getIssuerName() {
+        return issuerName;
+    }
+
+    public void setIssuerName(String issuerName) {
+        this.issuerName = issuerName;
+    }
+
     public long getAmount() {
         return amount;
     }
-    
+
     public void setAmount(long amount) {
         this.amount = amount;
     }
-    
-    public long getPlacedAt() {
-        return placedAt;
+
+    public long getIssuedTimestamp() {
+        return issuedTimestamp;
     }
-    
-    public void setPlacedAt(long placedAt) {
-        this.placedAt = placedAt;
+
+    public void setIssuedTimestamp(long issuedTimestamp) {
+        this.issuedTimestamp = issuedTimestamp;
     }
-    
-    public long getGuildId() {
-        return guildId;
+
+    public long getCompletedTimestamp() {
+        return completedTimestamp;
     }
-    
-    public void setGuildId(long guildId) {
-        this.guildId = guildId;
+
+    public void setCompletedTimestamp(long completedTimestamp) {
+        this.completedTimestamp = completedTimestamp;
     }
-    
+
+    public String getCompletedById() {
+        return completedById;
+    }
+
+    public void setCompletedById(String completedById) {
+        this.completedById = completedById;
+    }
+
+    public String getCompletedByName() {
+        return completedByName;
+    }
+
+    public void setCompletedByName(String completedByName) {
+        this.completedByName = completedByName;
+    }
+
+    public boolean isCompleted() {
+        return completed;
+    }
+
+    public void setCompleted(boolean completed) {
+        this.completed = completed;
+    }
+
+    public void complete(String playerId, String playerName) {
+        this.completed = true;
+        this.completedById = playerId;
+        this.completedByName = playerName;
+        this.completedTimestamp = System.currentTimeMillis();
+    }
+
     public String getServerId() {
         return serverId;
     }
-    
+
     public void setServerId(String serverId) {
         this.serverId = serverId;
     }
-    
+
+    public String getServerName() {
+        return serverName;
+    }
+
+    public void setServerName(String serverName) {
+        this.serverName = serverName;
+    }
+
+    public long getGuildId() {
+        return guildId;
+    }
+
+    public void setGuildId(long guildId) {
+        this.guildId = guildId;
+    }
+
+    public String getNotes() {
+        return notes;
+    }
+
+    public void setNotes(String notes) {
+        this.notes = notes;
+    }
+
     public boolean isActive() {
         return active;
     }
-    
+
     public void setActive(boolean active) {
         this.active = active;
-    }
-    
-    public String getClaimerId() {
-        return claimerId;
-    }
-    
-    public void setClaimerId(String claimerId) {
-        this.claimerId = claimerId;
-    }
-    
-    public String getClaimerName() {
-        return claimerName;
-    }
-    
-    public void setClaimerName(String claimerName) {
-        this.claimerName = claimerName;
-    }
-    
-    public long getClaimedAt() {
-        return claimedAt;
-    }
-    
-    public void setClaimedAt(long claimedAt) {
-        this.claimedAt = claimedAt;
     }
 }

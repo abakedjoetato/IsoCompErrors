@@ -2,12 +2,13 @@ package com.deadside.bot.db.repositories;
 
 import com.deadside.bot.db.MongoDBConnection;
 import com.deadside.bot.db.models.Faction;
-import com.deadside.bot.utils.GuildIsolationManager;
+import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
-import com.mongodb.client.model.Sorts;
 import com.mongodb.client.model.Updates;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.UpdateResult;
+import org.bson.Document;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.slf4j.Logger;
@@ -17,765 +18,297 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Repository for Faction collection with comprehensive isolation between guilds and servers
+ * Repository for Faction entity
  */
 public class FactionRepository {
     private static final Logger logger = LoggerFactory.getLogger(FactionRepository.class);
     private static final String COLLECTION_NAME = "factions";
-    
-    private MongoCollection<Faction> collection;
-    
-    public FactionRepository() {
-        try {
-            this.collection = MongoDBConnection.getInstance().getDatabase()
-                .getCollection(COLLECTION_NAME, Faction.class);
-        } catch (IllegalStateException e) {
-            // This can happen during early initialization - handle gracefully
-            logger.warn("MongoDB connection not initialized yet. Usage will be deferred until initialization.");
-        }
-    }
-    
+
     /**
-     * Get the MongoDB collection, initializing if needed
+     * Find faction by ID
+     * @param id Faction ID
+     * @return Faction or null if not found
      */
-    private MongoCollection<Faction> getCollection() {
-        if (collection == null) {
-            try {
-                // Try to get the collection now that MongoDB should be initialized
-                this.collection = MongoDBConnection.getInstance().getDatabase()
-                    .getCollection(COLLECTION_NAME, Faction.class);
-            } catch (Exception e) {
-                logger.error("Failed to initialize faction collection", e);
+    public Faction findById(String id) {
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = collection.find(Filters.eq("_id", new ObjectId(id))).first();
+            
+            if (doc == null) {
+                return null;
             }
-        }
-        return collection;
-    }
-    
-    /**
-     * Find a faction by ID with isolation check
-     * @param id The faction ID
-     * @param guildId The guild ID for isolation boundary
-     * @param serverId The server ID for isolation boundary
-     * @return The faction if it exists and belongs to the specified guild/server
-     */
-    public Faction findByIdWithIsolation(ObjectId id, long guildId, String serverId) {
-        try {
-            return getCollection().find(Filters.and(
-                Filters.eq("_id", id),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            )).first();
+            
+            return documentToFaction(doc);
         } catch (Exception e) {
-            logger.error("Error finding faction by ID with isolation: {} (Guild={}, Server={})",
-                id, guildId, serverId, e);
+            logger.error("Error finding faction by ID: {}", id, e);
             return null;
         }
     }
     
     /**
-     * Find a faction by ID using isolation-aware approach
-     * This method properly respects isolation boundaries
-     * @param id The ObjectId of the faction to find
-     * @return The faction with proper isolation boundaries respected
+     * Find faction by name and guild ID
+     * @param name Faction name
+     * @param guildId Guild ID
+     * @return Faction or null if not found
      */
-    public Faction findById(ObjectId id) {
-        if (id == null) {
-            logger.error("Cannot find faction with null ObjectID");
+    public Faction findByNameAndGuildId(String name, long guildId) {
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = collection.find(
+                Filters.and(
+                    Filters.eq("name", name),
+                    Filters.eq("guildId", guildId)
+                )
+            ).first();
+            
+            if (doc == null) {
+                return null;
+            }
+            
+            return documentToFaction(doc);
+        } catch (Exception e) {
+            logger.error("Error finding faction by name and guild ID: {}, {}", name, guildId, e);
             return null;
         }
+    }
+    
+    /**
+     * Find all factions for a guild
+     * @param guildId Guild ID
+     * @return List of factions
+     */
+    public List<Faction> findByGuildId(long guildId) {
+        List<Faction> factions = new ArrayList<>();
         
         try {
-            // Get distinct guild IDs to maintain isolation boundaries
-            List<Long> distinctGuildIds = getDistinctGuildIds();
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            FindIterable<Document> docs = collection.find(Filters.eq("guildId", guildId));
             
-            // Process each guild with proper isolation context
-            for (Long guildId : distinctGuildIds) {
-                if (guildId == null || guildId <= 0) continue;
-                
-                // Set isolation context for this guild
-                GuildIsolationManager.getInstance().setContext(guildId, null);
-                
-                try {
-                    // Get all servers for this guild to maintain proper isolation
-                    GameServerRepository gameServerRepo = new GameServerRepository();
-                    List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
-                    
-                    // Process each server with proper isolation
-                    for (com.deadside.bot.db.models.GameServer server : servers) {
-                        if (server == null || server.getServerId() == null) continue;
-                        
-                        // Set server context for detailed isolation
-                        GuildIsolationManager.getInstance().setContext(guildId, server.getServerId());
-                        
-                        try {
-                            // Find the faction with proper isolation
-                            Bson filter = Filters.and(
-                                Filters.eq("_id", id),
-                                Filters.eq("guildId", guildId),
-                                Filters.eq("serverId", server.getServerId())
-                            );
-                            
-                            Faction faction = getCollection().find(filter).first();
-                            if (faction != null) {
-                                logger.debug("Found faction with ID {} in guild {} and server {} using isolation-aware approach", 
-                                    id, guildId, server.getServerId());
-                                return faction;
-                            }
-                        } finally {
-                            // Reset to guild-level context
-                            GuildIsolationManager.getInstance().setContext(guildId, null);
-                        }
-                    }
-                } finally {
-                    // Always clear context when done
-                    GuildIsolationManager.getInstance().clearContext();
-                }
+            for (Document doc : docs) {
+                factions.add(documentToFaction(doc));
             }
-            
-            logger.debug("No faction found with ID {} in any guild using isolation-aware approach", id);
-            return null;
         } catch (Exception e) {
-            logger.error("Error finding faction by ID: {} using isolation-aware approach", id, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by name in a guild (partial isolation)
-     * @param guildId The guild ID
-     * @param name The faction name
-     * @return The faction if found
-     */
-    public Faction findByNameInGuild(long guildId, String name) {
-        try {
-            logger.warn("Partial isolation lookup by guild only for faction: {}. Consider using findByNameAndGuildIdAndServerId.", name);
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.regex("name", "^" + name + "$", "i")  // Case-insensitive exact match
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by name: {} in guild: {}", name, guildId, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by name using isolation-aware approach
-     * This method properly respects isolation boundaries
-     * @param name The name of the faction to find
-     * @return The faction with proper isolation boundaries respected
-     */
-    public Faction findByName(String name) {
-        if (name == null || name.isEmpty()) {
-            logger.error("Cannot find faction with null or empty name");
-            return null;
+            logger.error("Error finding factions by guild ID: {}", guildId, e);
         }
         
+        return factions;
+    }
+    
+    /**
+     * Find faction by member ID
+     * @param playerId Player ID
+     * @return Faction or null if not found
+     */
+    public Faction findByMemberId(String playerId) {
         try {
-            // Get distinct guild IDs to maintain isolation boundaries
-            List<Long> distinctGuildIds = getDistinctGuildIds();
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = collection.find(Filters.in("memberIds", playerId)).first();
             
-            // Process each guild with proper isolation context
-            for (Long guildId : distinctGuildIds) {
-                if (guildId == null || guildId <= 0) continue;
-                
-                // Set isolation context for this guild
-                GuildIsolationManager.getInstance().setContext(guildId, null);
-                
-                try {
-                    // Get all servers for this guild to maintain proper isolation
-                    GameServerRepository gameServerRepo = new GameServerRepository();
-                    List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
-                    
-                    // Process each server with proper isolation
-                    for (com.deadside.bot.db.models.GameServer server : servers) {
-                        if (server == null || server.getServerId() == null) continue;
-                        
-                        // Set server context for detailed isolation
-                        GuildIsolationManager.getInstance().setContext(guildId, server.getServerId());
-                        
-                        try {
-                            // Find the faction with proper isolation
-                            Faction faction = findByNameAndGuildIdAndServerId(name, guildId, server.getServerId());
-                            if (faction != null) {
-                                logger.debug("Found faction with name '{}' in guild {} and server {} using isolation-aware approach", 
-                                    name, guildId, server.getServerId());
-                                return faction;
-                            }
-                        } finally {
-                            // Reset to guild-level context
-                            GuildIsolationManager.getInstance().setContext(guildId, null);
-                        }
-                    }
-                } finally {
-                    // Always clear context when done
-                    GuildIsolationManager.getInstance().clearContext();
-                }
+            if (doc == null) {
+                return null;
             }
             
-            logger.debug("No faction found with name '{}' in any guild using isolation-aware approach", name);
-            return null;
+            return documentToFaction(doc);
         } catch (Exception e) {
-            logger.error("Error finding faction by name: '{}' using isolation-aware approach", name, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by name with proper guild and server isolation
-     */
-    public Faction findByNameAndGuildIdAndServerId(String name, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.regex("name", "^" + name + "$", "i"),  // Case-insensitive exact match
-                Filters.eq("guildId", guildId),                // Must match guild ID
-                Filters.eq("serverId", serverId)               // Must match server ID
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by name: {} for guild: {} and server: {}", 
-                name, guildId, serverId, e);
+            logger.error("Error finding faction by member ID: {}", playerId, e);
             return null;
         }
     }
     
     /**
-     * Find a faction by tag in a guild (partial isolation)
+     * Save a faction (insert or update)
+     * @param faction Faction to save
+     * @return Saved faction
      */
-    public Faction findByTagInGuild(long guildId, String tag) {
+    public Faction save(Faction faction) {
         try {
-            logger.warn("Partial isolation lookup by guild only for faction tag: {}. Consider using findByTagInGuildAndServerId.", tag);
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.regex("tag", "^" + tag + "$", "i")  // Case-insensitive exact match
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by tag: {} in guild: {}", tag, guildId, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by tag in a guild with proper server isolation
-     */
-    public Faction findByTagInGuildAndServerId(long guildId, String serverId, String tag) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),                // Must match guild ID
-                Filters.eq("serverId", serverId),              // Must match server ID
-                Filters.regex("tag", "^" + tag + "$", "i")     // Case-insensitive exact match
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by tag: {} in guild: {} and server: {}", 
-                tag, guildId, serverId, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by tag (not guild-specific)
-     * WARNING: This method doesn't enforce guild or server isolation
-     * and should only be used in contexts where isolation is already enforced
-     */
-    public Faction findByTag(String tag) {
-        try {
-            logger.warn("Non-isolated faction lookup by tag: {}. Consider using findByTagAndGuildIdAndServerId.", tag);
-            Bson filter = Filters.regex("tag", "^" + tag + "$", "i");  // Case-insensitive exact match
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by tag: {}", tag, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find a faction by tag with proper guild and server isolation
-     */
-    public Faction findByTagAndGuildIdAndServerId(String tag, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.regex("tag", "^" + tag + "$", "i"),    // Case-insensitive exact match
-                Filters.eq("guildId", guildId),                // Must match guild ID
-                Filters.eq("serverId", serverId)               // Must match server ID
-            );
-            return getCollection().find(filter).first();
-        } catch (Exception e) {
-            logger.error("Error finding faction by tag: {} for guild: {} and server: {}", 
-                tag, guildId, serverId, e);
-            return null;
-        }
-    }
-    
-    /**
-     * Find factions by owner ID using isolation-aware approach
-     * This method properly respects isolation boundaries
-     * @param ownerId The Discord ID of the faction owner
-     * @return List of all factions owned by this user with proper isolation boundaries respected
-     */
-    public List<Faction> findByOwner(long ownerId) {
-        List<Faction> ownerFactions = new ArrayList<>();
-        
-        try {
-            // Get distinct guild IDs to maintain isolation boundaries
-            List<Long> distinctGuildIds = getDistinctGuildIds();
-            
-            // Process each guild with proper isolation context
-            for (Long guildId : distinctGuildIds) {
-                if (guildId == null || guildId <= 0) continue;
-                
-                // Set isolation context for this guild
-                GuildIsolationManager.getInstance().setContext(guildId, null);
-                
-                try {
-                    // Get all servers for this guild to maintain proper isolation
-                    GameServerRepository gameServerRepo = new GameServerRepository();
-                    List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
-                    
-                    // Process each server with proper isolation
-                    for (com.deadside.bot.db.models.GameServer server : servers) {
-                        if (server == null || server.getServerId() == null) continue;
-                        
-                        // Set server context for detailed isolation
-                        GuildIsolationManager.getInstance().setContext(guildId, server.getServerId());
-                        
-                        try {
-                            // Find all factions for this owner, guild and server
-                            List<Faction> serverFactions = findByOwnerAndGuildIdAndServerId(ownerId, guildId, server.getServerId());
-                            ownerFactions.addAll(serverFactions);
-                        } finally {
-                            // Reset to guild-level context
-                            GuildIsolationManager.getInstance().setContext(guildId, null);
-                        }
-                    }
-                } finally {
-                    // Always clear context when done
-                    GuildIsolationManager.getInstance().clearContext();
-                }
-            }
-            
-            logger.debug("Retrieved all factions for owner {} using isolation-aware approach: {} total factions", 
-                ownerId, ownerFactions.size());
-        } catch (Exception e) {
-            logger.error("Error getting all factions for owner {} using isolation-aware approach", ownerId, e);
-        }
-        
-        return ownerFactions;
-    }
-    
-    /**
-     * Find factions by owner ID with proper guild and server isolation
-     */
-    public List<Faction> findByOwnerAndGuildIdAndServerId(long ownerId, long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("ownerId", ownerId),
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding factions by owner: {} for guild: {} and server: {}", 
-                ownerId, guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find factions where a user is a member (owner, officer or regular member)
-     * WARNING: This method doesn't enforce guild or server isolation
-     * and should only be used in contexts where isolation is already enforced
-     */
-    public List<Faction> findByMember(long memberId) {
-        try {
-            logger.warn("Non-isolated faction lookup by member ID: {}. Consider using findByMemberAndGuildIdAndServerId.", memberId);
-            Bson filter = Filters.or(
-                Filters.eq("ownerId", memberId),
-                Filters.in("officerIds", memberId),
-                Filters.in("memberIds", memberId)
-            );
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding factions by member: {}", memberId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find factions where a user is a member with proper guild and server isolation
-     */
-    public List<Faction> findByMemberAndGuildIdAndServerId(long memberId, long guildId, String serverId) {
-        try {
-            Bson memberFilter = Filters.or(
-                Filters.eq("ownerId", memberId),
-                Filters.in("officerIds", memberId),
-                Filters.in("memberIds", memberId)
-            );
-            
-            Bson filter = Filters.and(
-                memberFilter,
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            
-            return getCollection().find(filter).into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding factions by member: {} for guild: {} and server: {}", 
-                memberId, guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find all factions in a guild (partial isolation)
-     */
-    public List<Faction> findByGuild(long guildId) {
-        try {
-            logger.warn("Partial isolation lookup by guild only for factions. Consider using findByGuildIdAndServerId.", guildId);
-            return getCollection().find(Filters.eq("guildId", guildId))
-                .sort(Sorts.descending("level", "experience"))
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding factions by guild: {}", guildId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find all factions with proper guild and server isolation
-     */
-    public List<Faction> findByGuildIdAndServerId(long guildId, String serverId) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            
-            return getCollection().find(filter)
-                .sort(Sorts.descending("level", "experience"))
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding factions by guild: {} and server: {}", guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find all factions in a guild (alias method) (partial isolation)
-     */
-    public List<Faction> findAllByGuildId(long guildId) {
-        logger.warn("Partial isolation lookup by guild only for factions. Consider using findByGuildIdAndServerId.", guildId);
-        return findByGuild(guildId);
-    }
-    
-    /**
-     * Find all factions in a guild and server (alias method with full isolation)
-     */
-    public List<Faction> findAllByGuildIdAndServerId(long guildId, String serverId) {
-        return findByGuildIdAndServerId(guildId, serverId);
-    }
-    
-    /**
-     * Get all distinct guild IDs that have factions
-     * This is used for proper isolation when processing across multiple guilds
-     * @return List of distinct guild IDs
-     */
-    public List<Long> getDistinctGuildIds() {
-        try {
-            List<Long> guildIds = new ArrayList<>();
-            getCollection().distinct("guildId", Long.class).into(guildIds);
-            return guildIds;
-        } catch (Exception e) {
-            logger.error("Error retrieving distinct guild IDs for factions", e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find all factions
-     * WARNING: This method doesn't enforce guild or server isolation
-     * and should only be used in contexts where isolation is already enforced
-     */
-    public List<Faction> findAll() {
-        try {
-            logger.warn("Non-isolated retrieval of all factions. Consider using findByGuildIdAndServerId.");
-            return getCollection().find().into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding all factions", e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find top factions by level in a guild (partial isolation)
-     */
-    public List<Faction> findTopFactionsByLevel(long guildId, int limit) {
-        try {
-            logger.warn("Partial isolation lookup by guild only for top factions. Consider using findTopFactionsByLevelAndServerId.", guildId);
-            return getCollection().find(Filters.eq("guildId", guildId))
-                .sort(Sorts.descending("level", "experience"))
-                .limit(limit)
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding top factions by level for guild: {}", guildId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find top factions by level with proper guild and server isolation
-     */
-    public List<Faction> findTopFactionsByLevelAndServerId(long guildId, String serverId, int limit) {
-        try {
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            
-            return getCollection().find(filter)
-                .sort(Sorts.descending("level", "experience"))
-                .limit(limit)
-                .into(new ArrayList<>());
-        } catch (Exception e) {
-            logger.error("Error finding top factions by level for guild: {} and server: {}", guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find top factions by member count in a guild (partial isolation)
-     */
-    public List<Faction> findTopFactionsByMemberCount(long guildId, int limit) {
-        try {
-            logger.warn("Partial isolation lookup by guild only for top factions by member count. Consider using findTopFactionsByMemberCountAndServerId.", guildId);
-            // This is a bit tricky because we need to calculate total members
-            // MongoDB aggregation would be more efficient, but for simplicity we'll fetch all and sort in-memory
-            List<Faction> factions = getCollection().find(Filters.eq("guildId", guildId))
-                .into(new ArrayList<>());
-            
-            return factions.stream()
-                .sorted((f1, f2) -> Integer.compare(f2.getTotalMemberCount(), f1.getTotalMemberCount()))
-                .limit(limit)
-                .toList();
-        } catch (Exception e) {
-            logger.error("Error finding top factions by member count for guild: {}", guildId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Find top factions by member count with proper guild and server isolation
-     */
-    public List<Faction> findTopFactionsByMemberCountAndServerId(long guildId, String serverId, int limit) {
-        try {
-            // This is a bit tricky because we need to calculate total members
-            // MongoDB aggregation would be more efficient, but for simplicity we'll fetch all and sort in-memory
-            Bson filter = Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            );
-            
-            List<Faction> factions = getCollection().find(filter)
-                .into(new ArrayList<>());
-            
-            return factions.stream()
-                .sorted((f1, f2) -> Integer.compare(f2.getTotalMemberCount(), f1.getTotalMemberCount()))
-                .limit(limit)
-                .toList();
-        } catch (Exception e) {
-            logger.error("Error finding top factions by member count for guild: {} and server: {}", 
-                guildId, serverId, e);
-            return new ArrayList<>();
-        }
-    }
-    
-    /**
-     * Save or update a faction with proper isolation checks
-     */
-    public void save(Faction faction) {
-        try {
-            // Ensure faction has valid isolation fields
-            if (faction.getGuildId() <= 0 || faction.getServerId() == null || faction.getServerId().isEmpty()) {
-                logger.error("Attempted to save faction without proper isolation fields: {}", faction.getName());
-                return;
-            }
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            Document doc = factionToDocument(faction);
             
             if (faction.getId() == null) {
-                getCollection().insertOne(faction);
-                logger.debug("Inserted new faction: {} with proper isolation (Guild={}, Server={})",
-                    faction.getName(), faction.getGuildId(), faction.getServerId());
+                // Insert new faction
+                collection.insertOne(doc);
+                
+                // Get the ID
+                faction.setId(doc.getObjectId("_id").toString());
             } else {
-                Bson filter = Filters.eq("_id", faction.getId());
-                getCollection().replaceOne(filter, faction);
-                logger.debug("Updated faction: {} with isolation (Guild={}, Server={})",
-                    faction.getName(), faction.getGuildId(), faction.getServerId());
-            }
-        } catch (Exception e) {
-            logger.error("Error saving faction: {}", faction.getName(), e);
-        }
-    }
-    
-    /**
-     * Delete a faction with isolation check
-     */
-    public boolean deleteWithIsolation(Faction faction, long guildId, String serverId) {
-        try {
-            if (faction.getId() != null) {
-                // Check if faction belongs to specified guild/server before deleting
-                if (faction.getGuildId() == guildId && faction.getServerId().equals(serverId)) {
-                    Bson filter = Filters.eq("_id", faction.getId());
-                    getCollection().deleteOne(filter);
-                    logger.debug("Deleted faction: {} from Guild={}, Server={}", 
-                        faction.getName(), guildId, serverId);
-                    return true;
-                } else {
-                    logger.warn("Prevented deletion of faction {} due to isolation boundary mismatch", 
-                        faction.getName());
-                    return false;
+                // Update existing faction
+                UpdateResult result = collection.replaceOne(
+                    Filters.eq("_id", new ObjectId(faction.getId())),
+                    doc
+                );
+                
+                if (result.getMatchedCount() == 0) {
+                    logger.warn("No faction found with ID: {}", faction.getId());
+                    return null;
                 }
             }
-            return false;
+            
+            return faction;
         } catch (Exception e) {
-            logger.error("Error deleting faction: {} with isolation check", faction.getName(), e);
+            logger.error("Error saving faction: {}", faction.getName(), e);
+            return null;
+        }
+    }
+    
+    /**
+     * Delete a faction
+     * @param id Faction ID
+     * @return true if deleted, false otherwise
+     */
+    public boolean delete(String id) {
+        try {
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            DeleteResult result = collection.deleteOne(Filters.eq("_id", new ObjectId(id)));
+            
+            return result.getDeletedCount() > 0;
+        } catch (Exception e) {
+            logger.error("Error deleting faction with ID: {}", id, e);
             return false;
         }
     }
     
     /**
-     * Delete a faction (legacy method)
-     * WARNING: This method does not respect isolation boundaries and may lead to data leakage
+     * Add member to faction
+     * @param factionId Faction ID
+     * @param playerId Player ID
+     * @return true if added, false otherwise
      */
-    public boolean delete(Faction faction) {
+    public boolean addMember(String factionId, String playerId) {
         try {
-            logger.warn("Non-isolated faction deletion for: {}. Consider using deleteWithIsolation.", 
-                faction.getName());
-            if (faction.getId() != null) {
-                Bson filter = Filters.eq("_id", faction.getId());
-                getCollection().deleteOne(filter);
-                logger.debug("Deleted faction: {}", faction.getName());
-                return true;
-            }
-            return false;
-        } catch (Exception e) {
-            logger.error("Error deleting faction: {}", faction.getName(), e);
-            return false;
-        }
-    }
-    
-    /**
-     * Delete all factions by guildId and serverId - used for data cleanup
-     */
-    public long deleteAllByGuildIdAndServerId(long guildId, String serverId) {
-        try {
-            DeleteResult result = getCollection().deleteMany(Filters.and(
-                Filters.eq("guildId", guildId),
-                Filters.eq("serverId", serverId)
-            ));
-            logger.info("Deleted {} factions from Guild={}, Server={}", result.getDeletedCount(), guildId, serverId);
-            return result.getDeletedCount();
-        } catch (Exception e) {
-            logger.error("Error deleting factions by guild and server", e);
-            return 0;
-        }
-    }
-    
-    /**
-     * Add experience to a faction with isolation check
-     */
-    public boolean addExperienceWithIsolation(ObjectId factionId, int amount, long guildId, String serverId) {
-        try {
-            // Find faction with isolation check
-            Faction faction = findByIdWithIsolation(factionId, guildId, serverId);
-            if (faction == null) {
-                logger.warn("Prevented adding experience to faction {} due to isolation boundary mismatch or non-existence", 
-                    factionId);
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            
+            // First check if player is already in a faction
+            if (findByMemberId(playerId) != null) {
+                logger.warn("Player {} is already in a faction", playerId);
                 return false;
             }
             
-            boolean leveledUp = faction.addExperience(amount);
-            save(faction);
-            return leveledUp;
+            UpdateResult result = collection.updateOne(
+                Filters.eq("_id", new ObjectId(factionId)),
+                Updates.addToSet("memberIds", playerId)
+            );
+            
+            return result.getModifiedCount() > 0;
         } catch (Exception e) {
-            logger.error("Error adding experience to faction: {} with isolation check", factionId, e);
+            logger.error("Error adding member {} to faction {}", playerId, factionId, e);
             return false;
         }
     }
     
     /**
-     * Add experience to a faction (legacy method)
-     * WARNING: This method does not respect isolation boundaries and may lead to data leakage
+     * Remove member from faction
+     * @param factionId Faction ID
+     * @param playerId Player ID
+     * @return true if removed, false otherwise
      */
-    public boolean addExperience(ObjectId factionId, int amount) {
+    public boolean removeMember(String factionId, String playerId) {
         try {
-            logger.warn("Non-isolated faction experience update for: {}. Consider using addExperienceWithIsolation.", 
-                factionId);
+            MongoCollection<Document> collection = MongoDBConnection.getCollection(COLLECTION_NAME);
+            
+            // First check if this member is the leader
             Faction faction = findById(factionId);
-            if (faction == null) {
+            if (faction != null && faction.getLeaderId().equals(playerId)) {
+                logger.warn("Cannot remove leader {} from faction {}", playerId, factionId);
                 return false;
             }
             
-            boolean leveledUp = faction.addExperience(amount);
-            save(faction);
-            return leveledUp;
+            // Remove from members and officers
+            List<Bson> updates = new ArrayList<>();
+            updates.add(Updates.pull("memberIds", playerId));
+            updates.add(Updates.pull("officerIds", playerId));
+            
+            UpdateResult result = collection.updateOne(
+                Filters.eq("_id", new ObjectId(factionId)),
+                Updates.combine(updates)
+            );
+            
+            return result.getModifiedCount() > 0;
         } catch (Exception e) {
-            logger.error("Error adding experience to faction: {}", factionId, e);
+            logger.error("Error removing member {} from faction {}", playerId, factionId, e);
             return false;
         }
     }
     
     /**
-     * Update faction bank balance with isolation check
+     * Convert document to faction
+     * @param doc MongoDB document
+     * @return Faction object
      */
-    public boolean updateBalanceWithIsolation(ObjectId factionId, long amount, long guildId, String serverId) {
-        try {
-            // Find faction with isolation check
-            Faction faction = findByIdWithIsolation(factionId, guildId, serverId);
-            if (faction == null) {
-                logger.warn("Prevented updating balance of faction {} due to isolation boundary mismatch or non-existence", 
-                    factionId);
-                return false;
-            }
-            
-            if (amount >= 0) {
-                faction.deposit(amount);
-            } else {
-                faction.withdraw(-amount);
-            }
-            
-            save(faction);
-            return true;
-        } catch (Exception e) {
-            logger.error("Error updating balance for faction: {} with isolation check", factionId, e);
-            return false;
+    @SuppressWarnings("unchecked")
+    private Faction documentToFaction(Document doc) {
+        Faction faction = new Faction();
+        
+        faction.setId(doc.getObjectId("_id").toString());
+        faction.setName(doc.getString("name"));
+        faction.setDescription(doc.getString("description"));
+        faction.setLeaderId(doc.getString("leaderId"));
+        
+        List<String> officerIds = (List<String>) doc.get("officerIds");
+        if (officerIds != null) {
+            faction.setOfficerIds(officerIds);
         }
+        
+        List<String> memberIds = (List<String>) doc.get("memberIds");
+        if (memberIds != null) {
+            faction.setMemberIds(memberIds);
+        }
+        
+        Document statsDoc = (Document) doc.get("stats");
+        if (statsDoc != null) {
+            for (String key : statsDoc.keySet()) {
+                faction.setStat(key, statsDoc.get(key));
+            }
+        }
+        
+        faction.setCreationTimestamp(doc.getLong("creationTimestamp"));
+        faction.setTotalKills(doc.getLong("totalKills"));
+        faction.setTotalDeaths(doc.getLong("totalDeaths"));
+        faction.setTotalCoins(doc.getLong("totalCoins"));
+        faction.setActive(doc.getBoolean("active", true));
+        faction.setBannerUrl(doc.getString("bannerUrl"));
+        faction.setColorHex(doc.getString("colorHex"));
+        faction.setLastActiveTimestamp(doc.getLong("lastActiveTimestamp"));
+        faction.setGuildId(doc.getLong("guildId"));
+        faction.setServerId(doc.getString("serverId"));
+        
+        return faction;
     }
     
     /**
-     * Update faction bank balance (legacy method)
-     * WARNING: This method does not respect isolation boundaries and may lead to data leakage
+     * Convert faction to document
+     * @param faction Faction object
+     * @return MongoDB document
      */
-    public boolean updateBalance(ObjectId factionId, long amount) {
-        try {
-            logger.warn("Non-isolated faction balance update for: {}. Consider using updateBalanceWithIsolation.", 
-                factionId);
-            Faction faction = findById(factionId);
-            if (faction == null) {
-                return false;
-            }
-            
-            if (amount >= 0) {
-                faction.deposit(amount);
-            } else {
-                faction.withdraw(-amount);
-            }
-            
-            save(faction);
-            return true;
-        } catch (Exception e) {
-            logger.error("Error updating balance for faction: {}", factionId, e);
-            return false;
+    private Document factionToDocument(Faction faction) {
+        Document doc = new Document();
+        
+        if (faction.getId() != null) {
+            doc.append("_id", new ObjectId(faction.getId()));
         }
+        
+        doc.append("name", faction.getName())
+           .append("description", faction.getDescription())
+           .append("leaderId", faction.getLeaderId())
+           .append("officerIds", faction.getOfficerIds())
+           .append("memberIds", faction.getMemberIds())
+           .append("creationTimestamp", faction.getCreationTimestamp())
+           .append("totalKills", faction.getTotalKills())
+           .append("totalDeaths", faction.getTotalDeaths())
+           .append("totalCoins", faction.getTotalCoins())
+           .append("active", faction.isActive())
+           .append("bannerUrl", faction.getBannerUrl())
+           .append("colorHex", faction.getColorHex())
+           .append("lastActiveTimestamp", faction.getLastActiveTimestamp())
+           .append("guildId", faction.getGuildId())
+           .append("serverId", faction.getServerId());
+        
+        Document statsDoc = new Document();
+        for (String key : faction.getStats().keySet()) {
+            statsDoc.append(key, faction.getStats().get(key));
+        }
+        doc.append("stats", statsDoc);
+        
+        return doc;
     }
 }

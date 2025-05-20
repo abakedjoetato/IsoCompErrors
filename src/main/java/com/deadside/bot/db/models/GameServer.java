@@ -28,10 +28,14 @@ public class GameServer {
     private boolean online;
     private long logChannelId;
     private boolean useSftpForLogs;
+    private long lastProcessedTimestamp;
+    private String username;
+    private String password;
     
     public GameServer() {
         // Default constructor
         this.active = true;
+        this.lastProcessedTimestamp = 0L;
         this.ftpPort = 21; // Default FTP port
         this.readOnly = false;
         this.name = "Default Server";
@@ -264,11 +268,48 @@ public class GameServer {
     }
     
     public String getUsername() {
-        return ftpUsername;
+        return username != null ? username : ftpUsername;
+    }
+    
+    public void setUsername(String username) {
+        this.username = username;
+    }
+    
+    public String getPassword() {
+        return password != null ? password : ftpPassword;
+    }
+    
+    public void setPassword(String password) {
+        this.password = password;
     }
     
     public int getPort() {
         return ftpPort;
+    }
+    
+    public void setPort(int port) {
+        this.ftpPort = port;
+        this.sftpPort = port;
+    }
+    
+    public long getLastProcessedTimestamp() {
+        return lastProcessedTimestamp;
+    }
+    
+    public void setLastProcessedTimestamp(long lastProcessedTimestamp) {
+        this.lastProcessedTimestamp = lastProcessedTimestamp;
+    }
+    
+    public void synchronizeCredentials() {
+        // Ensure all credentials are synchronized
+        if (this.sftpHost == null) this.sftpHost = this.ftpHost;
+        if (this.sftpUsername == null) this.sftpUsername = this.ftpUsername;
+        if (this.sftpPassword == null) this.sftpPassword = this.ftpPassword;
+        if (this.sftpPort <= 0) this.sftpPort = this.ftpPort;
+        
+        if (this.host == null) this.host = this.serverIp;
+        if (this.username == null) this.username = this.ftpUsername;
+        if (this.password == null) this.password = this.ftpPassword;
     }
     
     // Constructor with all parameters for backwards compatibility
@@ -287,5 +328,26 @@ public class GameServer {
         this.sftpHost = ftpHost;
         this.sftpUsername = ftpUsername;
         this.sftpPassword = ftpPassword;
+    }
+    
+    // Constructor with server ID for use in ServerCommand
+    public GameServer(String serverId, String serverName, int gamePort, String ftpHost,
+                     String ftpUsername, String ftpPassword, long guildId) {
+        this();
+        this.id = serverId;
+        this.serverName = serverName;
+        this.gamePort = gamePort;
+        this.ftpHost = ftpHost;
+        this.ftpUsername = ftpUsername;
+        this.ftpPassword = ftpPassword;
+        this.guildId = guildId;
+        this.name = serverName;
+        this.sftpHost = ftpHost;
+        this.sftpUsername = ftpUsername;
+        this.sftpPassword = ftpPassword;
+        this.serverIp = "127.0.0.1"; // Default value
+        this.host = this.serverIp;
+        this.username = ftpUsername;
+        this.password = ftpPassword;
     }
 }

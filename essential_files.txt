@@ -1,0 +1,15 @@
+src/main/java/com/deadside/bot/Main.java
+src/main/java/com/deadside/bot/bot/DeadsideBot.java
+src/main/java/com/deadside/bot/commands/CommandManager.java
+src/main/java/com/deadside/bot/commands/ICommand.java
+src/main/java/com/deadside/bot/db/models/GameServer.java
+src/main/java/com/deadside/bot/db/models/Player.java
+src/main/java/com/deadside/bot/db/repositories/PlayerRepository.java
+src/main/java/com/deadside/bot/db/repositories/GameServerRepository.java
+src/main/java/com/deadside/bot/db/MongoDBConnection.java
+src/main/java/com/deadside/bot/sftp/SftpConnector.java
+src/main/java/com/deadside/bot/commands/admin/DatabaseResetCommand.java
+src/main/java/com/deadside/bot/commands/admin/RunCleanupOnStartupCommand.java
+src/main/java/com/deadside/bot/commands/parsers/ValidateParserCommand.java
+src/main/java/com/deadside/bot/commands/parsers/SyncStatsCommand.java
+src/main/java/com/deadside/bot/commands/parsers/ProcessHistoricalDataCommand.java
