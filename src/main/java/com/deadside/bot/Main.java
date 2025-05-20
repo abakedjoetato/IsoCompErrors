@@ -1,7 +1,6 @@
 package com.deadside.bot;
 
 import com.deadside.bot.bot.DeadsideBot;
-import com.deadside.bot.utils.ResourceManager;
 import com.deadside.bot.db.MongoDBConnection;
 
 import java.util.logging.Level;
@@ -23,8 +22,8 @@ public class Main {
             if (discordToken == null || discordToken.isEmpty()) {
                 discordToken = System.getenv("BOT_TOKEN");
                 if (discordToken == null || discordToken.isEmpty()) {
-                    // For demonstration/development purposes only, use a test token
-                    LOGGER.warning("Neither DISCORD_TOKEN nor BOT_TOKEN environment variable is set. Using a placeholder for compilation testing only.");
+                    // For development purposes only, use a test token
+                    LOGGER.warning("DISCORD_TOKEN environment variable is not set. Using a placeholder for compilation testing only.");
                     discordToken = "test_token_for_compilation_only";
                 }
             }
@@ -32,7 +31,7 @@ public class Main {
             // Get MongoDB URI from environment variable
             String mongoUri = System.getenv("MONGO_URI");
             if (mongoUri == null || mongoUri.isEmpty()) {
-                // For demonstration/development purposes only
+                // For development purposes only
                 LOGGER.warning("MONGO_URI environment variable not set. Using a local MongoDB URI for testing compilation.");
                 mongoUri = "mongodb://localhost:27017/deadsidebot";
             }

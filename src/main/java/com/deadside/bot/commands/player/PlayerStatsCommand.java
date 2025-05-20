@@ -68,7 +68,7 @@ public class PlayerStatsCommand implements ICommand {
                     "**Deaths:** " + player.getDeaths() + "\n" +
                     "**K/D Ratio:** " + formatKD(player.getKills(), player.getDeaths()) + "\n" +
                     "**Playtime:** " + formatPlaytime(player.getPlaytimeMinutes()) + "\n" +
-                    "**Last Seen:** " + (player.getLastSeen() != null ? player.getLastSeen() : "Unknown"))
+                    "**Last Seen:** " + (player.getLastSeen() > 0 ? player.getLastSeen() : "Unknown"))
             ).queue();
             
             logger.info("Retrieved player stats for {}", playerName);

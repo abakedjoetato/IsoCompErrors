@@ -91,12 +91,12 @@ public class ServerStatsCommand implements ICommand {
             stats.append("\n**Status:** ");
             if (server.isOnline()) {
                 stats.append("✅ Online");
-                if (server.getLastUpdated() != null) {
+                if (server.getLastUpdated() > 0) {
                     stats.append("\n**Last Updated:** ").append(server.getLastUpdated());
                 }
             } else {
                 stats.append("❌ Offline");
-                if (server.getLastUpdated() != null) {
+                if (server.getLastUpdated() > 0) {
                     stats.append("\n**Last Seen:** ").append(server.getLastUpdated());
                 }
             }

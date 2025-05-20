@@ -393,6 +393,44 @@ public class Player {
         return playerId;
     }
     
+    // Playtime tracking fields
+    private int playtimeMinutes = 0;
+    private long lastSeen = 0;
+    
+    /**
+     * Get player's playtime in minutes
+     * @return Playtime in minutes
+     */
+    public int getPlaytimeMinutes() {
+        return playtimeMinutes;
+    }
+    
+    /**
+     * Set player's playtime in minutes
+     * @param playtimeMinutes Playtime in minutes
+     */
+    public void setPlaytimeMinutes(int playtimeMinutes) {
+        this.playtimeMinutes = playtimeMinutes;
+        this.lastUpdated = System.currentTimeMillis();
+    }
+    
+    /**
+     * Get the last time player was seen on the server
+     * @return Timestamp when player was last seen
+     */
+    public long getLastSeen() {
+        return lastSeen;
+    }
+    
+    /**
+     * Set the last time player was seen on the server
+     * @param lastSeen Timestamp when player was last seen
+     */
+    public void setLastSeen(long lastSeen) {
+        this.lastSeen = lastSeen;
+        this.lastUpdated = System.currentTimeMillis();
+    }
+    
     /**
      * Set the Deadside ID of the player
      * This is an alias for setPlayerId to maintain consistent naming

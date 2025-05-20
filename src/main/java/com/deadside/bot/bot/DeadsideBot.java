@@ -3,26 +3,17 @@ package com.deadside.bot.bot;
 import com.deadside.bot.commands.CommandManager;
 import com.deadside.bot.config.Config;
 import com.deadside.bot.db.models.GameServer;
-import com.deadside.bot.isolation.IsolationBootstrap;
-import com.deadside.bot.bot.AutoStartupCleanup;
-import com.deadside.bot.bot.ParserFixIntegration;
+import com.deadside.bot.db.repositories.GameServerRepository;
+import com.deadside.bot.db.repositories.PlayerRepository;
 import com.deadside.bot.listeners.ButtonListener;
 import com.deadside.bot.listeners.CommandListener;
 import com.deadside.bot.listeners.ModalListener;
 import com.deadside.bot.listeners.StringSelectMenuListener;
 import com.deadside.bot.parsers.DeadsideCsvParser;
 import com.deadside.bot.parsers.DeadsideLogParser;
-import com.deadside.bot.premium.PremiumManager;
-import com.deadside.bot.premium.Tip4servWebhookController;
 import com.deadside.bot.schedulers.KillfeedScheduler;
-import com.deadside.bot.schedulers.PlayerCountVoiceChannelUpdater;
-import com.deadside.bot.db.repositories.GameServerRepository;
-import com.deadside.bot.db.repositories.PlayerRepository;
+import com.deadside.bot.schedulers.ServerStatsScheduler;
 import com.deadside.bot.sftp.SftpConnector;
-import com.deadside.bot.utils.GuildIsolationManager;
-import com.deadside.bot.utils.DataIsolationMigration;
-
-import java.util.ArrayList;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
 import net.dv8tion.jda.api.OnlineStatus;
@@ -30,396 +21,139 @@ import net.dv8tion.jda.api.entities.Activity;
 import net.dv8tion.jda.api.requests.GatewayIntent;
 import net.dv8tion.jda.api.utils.ChunkingFilter;
 import net.dv8tion.jda.api.utils.MemberCachePolicy;
-import net.dv8tion.jda.api.utils.cache.CacheFlag;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.EnumSet;
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Main bot class that initializes JDA and sets up listeners and commands
+ * Main DeadsideBot implementation
  */
 public class DeadsideBot {
     private static final Logger logger = LoggerFactory.getLogger(DeadsideBot.class);
-    
     private final String token;
     private JDA jda;
     private CommandManager commandManager;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
-    private KillfeedScheduler killfeedScheduler;
-    private DeadsideLogParser logParser;
-    private DeadsideCsvParser csvParser;
-    private PremiumManager premiumManager;
-    private Tip4servWebhookController webhookController;
-    private PlayerCountVoiceChannelUpdater playerCountUpdater;
-    private ParserFixIntegration parserFixIntegration;
-    private IsolationBootstrap isolationBootstrap;
     
+    /**
+     * Constructor
+     * @param token Discord bot token
+     */
     public DeadsideBot(String token) {
         this.token = token;
     }
     
     /**
-     * Start the bot and initialize all components
+     * Start the bot
      */
     public void start() {
         try {
-            // Initialize data isolation system
-            logger.info("Initializing data isolation system...");
-            isolationBootstrap = IsolationBootstrap.getInstance();
-            isolationBootstrap.initialize();
-            
-            // Initialize the premium manager
-            premiumManager = new PremiumManager();
-            
-            // Initialize repositories first
+            // Create repositories
             GameServerRepository gameServerRepository = new GameServerRepository();
             PlayerRepository playerRepository = new PlayerRepository();
             
-            // Initialize SFTP connector
+            // Create SFTP connector
             SftpConnector sftpConnector = new SftpConnector();
             
-            // Create parsers
-            DeadsideCsvParser csvParser = new DeadsideCsvParser(null, sftpConnector, playerRepository, gameServerRepository);
-            DeadsideLogParser logParser = new DeadsideLogParser(null, gameServerRepository, sftpConnector);
-            
-            // Build the JDA instance with necessary intents
+            // Build JDA
             jda = JDABuilder.createDefault(token)
-                    .setStatus(OnlineStatus.ONLINE)
-                    .setActivity(Activity.playing("Deadside"))
-                    .enableIntents(
-                            GatewayIntent.GUILD_MEMBERS,
-                            GatewayIntent.GUILD_MESSAGES,
-                            GatewayIntent.GUILD_MESSAGE_REACTIONS,
-                            GatewayIntent.MESSAGE_CONTENT
-                    )
-                    .setMemberCachePolicy(MemberCachePolicy.ALL)
-                    .setChunkingFilter(ChunkingFilter.ALL)
-                    .enableCache(EnumSet.of(
-                            CacheFlag.MEMBER_OVERRIDES,
-                            CacheFlag.ROLE_TAGS,
-                            CacheFlag.EMOJI,
-                            CacheFlag.VOICE_STATE
-                    ))
-                    .build();
-                    
-            // Create new parser instances with valid JDA reference
-            DeadsideCsvParser csvParserWithJda = new DeadsideCsvParser(jda, sftpConnector, playerRepository, gameServerRepository);
-            DeadsideLogParser logParserWithJda = new DeadsideLogParser(jda, gameServerRepository, sftpConnector);
+                .setStatus(OnlineStatus.ONLINE)
+                .setActivity(Activity.playing("Deadside"))
+                .enableIntents(
+                    GatewayIntent.GUILD_MEMBERS,
+                    GatewayIntent.GUILD_MESSAGES,
+                    GatewayIntent.GUILD_VOICE_STATES,
+                    GatewayIntent.GUILD_EMOJIS_AND_STICKERS,
+                    GatewayIntent.DIRECT_MESSAGES,
+                    GatewayIntent.MESSAGE_CONTENT
+                )
+                .setMemberCachePolicy(MemberCachePolicy.ALL)
+                .setChunkingFilter(ChunkingFilter.ALL)
+                .build();
             
-            // Initialize command manager with all required dependencies and register all commands
-            commandManager = new CommandManager(jda, gameServerRepository, playerRepository, sftpConnector, csvParserWithJda, logParserWithJda);
+            // Create parser instances
+            DeadsideCsvParser csvParser = new DeadsideCsvParser(jda, sftpConnector, playerRepository, gameServerRepository);
+            DeadsideLogParser logParser = new DeadsideLogParser(jda, gameServerRepository, sftpConnector);
+            
+            // Create command manager and initialize commands
+            commandManager = new CommandManager(jda, gameServerRepository, playerRepository, sftpConnector, csvParser, logParser);
             
             // Register commands with Discord API
-            initializeCommandRegistration();
+            logger.info("Registering commands with Discord API");
+            commandManager.registerCommands();
             
-            // Now add event listeners after command manager is initialized
+            // Add event listeners
             jda.addEventListener(
-                    new CommandListener(commandManager),
-                    new ButtonListener(),
-                    new StringSelectMenuListener(),
-                    new ModalListener()
+                new CommandListener(commandManager),
+                new ButtonListener(),
+                new StringSelectMenuListener(),
+                new ModalListener()
             );
             
             // Wait for JDA to be ready
             jda.awaitReady();
             logger.info("JDA initialized and connected to Discord gateway");
-
-            // Register slash commands (using no-arg version)
-            logger.info("Registering commands with Discord API");
-            commandManager.registerCommands();
             
             // Start schedulers
             startSchedulers();
             
-            // Initialize and start premium feature components
-            // Skip premium system in development mode
-            if (System.getProperty("dev.mode") == null) {
-                initializePremiumSystem();
-            } else {
-                logger.info("Development mode - skipping premium system initialization");
-            }
-            
-            // Run data isolation migration if needed
-            if (System.getProperty("dev.mode") == null) {
-                runDataIsolationMigrationIfNeeded();
-            } else {
-                logger.info("Development mode - skipping data isolation migration");
-            }
-            
-            // Run automatic cleanup if enabled
-            if (System.getProperty("dev.mode") == null) {
-                AutoStartupCleanup.runIfEnabled();
-            } else {
-                logger.info("Development mode - skipping automatic cleanup");
-            }
-            
-            // Initialize and apply parser fixes
-            if (System.getProperty("dev.mode") == null) {
-                initializeParserFixes();
-            } else {
-                logger.info("Development mode - skipping parser fixes");
-            }
-            
-            logger.info("Bot is now online and all systems operational with data isolation enforced!");
+            logger.info("Bot is now online and all systems operational!");
         } catch (Exception e) {
-            logger.error("Failed to initialize bot", e);
-            throw new RuntimeException("Failed to initialize bot", e);
+            logger.error("Error starting bot", e);
+            throw new RuntimeException("Failed to start bot", e);
         }
     }
     
     /**
-     * Initialize premium system components
-     */
-    private void initializePremiumSystem() {
-        try {
-            Config config = Config.getInstance();
-            
-            // Get webhook configuration from environment or config
-            String webhookSecret = System.getenv("TIP4SERV_WEBHOOK_SECRET");
-            if (webhookSecret == null || webhookSecret.isEmpty()) {
-                webhookSecret = config.getProperty("tip4serv.webhook.secret", "");
-            }
-            
-            int webhookPort = 8080; // Default port
-            String portStr = System.getenv("TIP4SERV_WEBHOOK_PORT");
-            if (portStr != null && !portStr.isEmpty()) {
-                try {
-                    webhookPort = Integer.parseInt(portStr);
-                } catch (NumberFormatException e) {
-                    logger.warn("Invalid Tip4serv webhook port: {}, using default 8080", portStr);
-                }
-            } else {
-                String configPort = config.getProperty("tip4serv.webhook.port", "8080");
-                try {
-                    webhookPort = Integer.parseInt(configPort);
-                } catch (NumberFormatException e) {
-                    logger.warn("Invalid Tip4serv webhook port in config: {}, using default 8080", configPort);
-                }
-            }
-            
-            String webhookPath = System.getenv("TIP4SERV_WEBHOOK_PATH");
-            if (webhookPath == null || webhookPath.isEmpty()) {
-                webhookPath = config.getProperty("tip4serv.webhook.path", "/webhook/tip4serv");
-            }
-            
-            // Initialize and start the webhook controller
-            webhookController = new Tip4servWebhookController(
-                    premiumManager, 
-                    webhookPort, 
-                    webhookPath, 
-                    webhookSecret
-            );
-            webhookController.start();
-            
-            // Schedule regular check for expired premium subscriptions
-            scheduler.scheduleAtFixedRate(
-                    premiumManager::checkExpiredSubscriptions,
-                    1, // Initial delay of 1 hour to allow bot to fully initialize
-                    24, // Check daily
-                    TimeUnit.HOURS
-            );
-            
-            logger.info("Premium system initialized with webhook listening on port {} at path {}", 
-                    webhookPort, webhookPath);
-        } catch (Exception e) {
-            logger.error("Failed to initialize premium system", e);
-        }
-    }
-    
-    /**
-     * Start all scheduled tasks
+     * Start all schedulers for automated tasks
      */
     private void startSchedulers() {
-        Config config = Config.getInstance();
-        
-        // Initialize killfeed scheduler
-        killfeedScheduler = new KillfeedScheduler();
-        killfeedScheduler.initialize(jda);
-        int killfeedInterval = config.getKillfeedUpdateInterval();
-        
-        // Schedule killfeed updates
-        scheduler.scheduleAtFixedRate(
-                killfeedScheduler::processAllServers,
-                1, // Initial delay of 1 second to allow bot to fully initialize
-                killfeedInterval,
-                TimeUnit.SECONDS
-        );
-        
-        // Initialize common dependencies for parsers
-        GameServerRepository gameServerRepository = new GameServerRepository();
-        PlayerRepository playerRepository = new PlayerRepository();
-        SftpConnector sftpConnector = new SftpConnector();
-        
-        // Initialize and start log parser
-        logParser = new DeadsideLogParser(jda, gameServerRepository, sftpConnector);
-        int logParserInterval = 180; // Fixed to 180 seconds as required
-        
-        // Schedule log parsing
-        scheduler.scheduleAtFixedRate(
-                logParser::processAllServerLogs,
-                5, // Initial delay of 5 seconds to allow full initialization
-                logParserInterval,
-                TimeUnit.SECONDS
-        );
-        
-        // Initialize and start CSV death log parser with proper isolation support
-        csvParser = new DeadsideCsvParser(jda, sftpConnector, playerRepository, gameServerRepository);
-        int csvParserInterval = 300; // Fixed to 300 seconds as required
-        
-        // Schedule CSV death log parsing
-        scheduler.scheduleAtFixedRate(
-                () -> {
-                    try {
-                        // Process servers using isolation-aware method
-                        List<Long> guildIds = fetchAllGuildIds();
-                        for (Long guildId : guildIds) {
-                            if (guildId != null && guildId > 0) {
-                                List<GameServer> guildServers = gameServerRepository.findAllByGuildId(guildId);
-                                for (GameServer server : guildServers) {
-                                    // Set isolation context for the current server
-                                    GuildIsolationManager.getInstance().setContext(guildId, server.getServerId());
-                                    csvParser.processDeathLogs(server);
-                                    // Clear context after processing
-                                    GuildIsolationManager.getInstance().clearContext();
-                                }
-                            }
-                        }
-                    } catch (Exception e) {
-                        logger.error("Error processing CSV death logs: {}", e.getMessage(), e);
-                    }
-                },
-                10, // Initial delay of 10 seconds
-                csvParserInterval,
-                TimeUnit.SECONDS
-        );
-        
-        // Initialize and start player count voice channel updater
-        playerCountUpdater = new PlayerCountVoiceChannelUpdater(jda, scheduler);
-        
-        logger.info("Scheduled killfeed updates every {} seconds", killfeedInterval);
-        logger.info("Scheduled log parsing every {} seconds", logParserInterval);
-        logger.info("Scheduled CSV death log parsing every {} seconds", csvParserInterval);
-        logger.info("Scheduled player count voice channel updates every 5 minutes");
+        try {
+            logger.info("Starting schedulers...");
+            
+            // Get refresh intervals from config
+            int statsInterval = 60; // Default 60 seconds
+            int killfeedInterval = 30; // Default 30 seconds
+            
+            // Start killfeed scheduler
+            KillfeedScheduler killfeedScheduler = new KillfeedScheduler(jda);
+            scheduler.scheduleAtFixedRate(killfeedScheduler, 5, killfeedInterval, TimeUnit.SECONDS);
+            logger.info("Killfeed scheduler started with interval {} seconds", killfeedInterval);
+            
+            // Start server stats scheduler
+            ServerStatsScheduler serverStatsScheduler = new ServerStatsScheduler(jda);
+            scheduler.scheduleAtFixedRate(serverStatsScheduler, 10, statsInterval, TimeUnit.SECONDS);
+            logger.info("Server stats scheduler started with interval {} seconds", statsInterval);
+        } catch (Exception e) {
+            logger.error("Error starting schedulers", e);
+        }
     }
     
     /**
-     * Shutdown the bot gracefully
+     * Shutdown the bot
      */
     public void shutdown() {
-        logger.info("Shutting down Tip4serv webhook controller...");
-        if (webhookController != null) {
-            webhookController.stop();
-        }
-        
-        logger.info("Shutting down schedulers...");
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(30, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
-        }
-        
-        logger.info("Shutting down JDA...");
-        if (jda != null) {
-            jda.shutdown();
+        if (scheduler != null) {
+            logger.info("Shutting down schedulers...");
+            scheduler.shutdown();
             try {
-                // Wait for JDA to shutdown properly
-                if (!jda.awaitShutdown(30, TimeUnit.SECONDS)) {
-                    jda.shutdownNow();
-                    jda.awaitStatus(JDA.Status.SHUTDOWN);
+                if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
                 }
             } catch (InterruptedException e) {
-                jda.shutdownNow();
+                scheduler.shutdownNow();
                 Thread.currentThread().interrupt();
             }
         }
-    }
-    
-    public JDA getJda() {
-        return jda;
-    }
-    
-    /**
-     * Helper method to fetch all guild IDs for isolation-aware operations
-     * @return List of all guild IDs in the system
-     */
-    private List<Long> fetchAllGuildIds() {
-        try {
-            // If connected to Discord, get guild IDs from JDA
-            if (jda != null) {
-                return jda.getGuilds().stream()
-                        .map(guild -> guild.getIdLong())
-                        .toList();
-            }
-            
-            // Fallback to database if JDA is not ready, using isolation-aware methods
-            GameServerRepository serverRepo = new GameServerRepository();
-            List<Long> distinctGuildIds = serverRepo.getDistinctGuildIds();
-            
-            return distinctGuildIds.stream()
-                    .filter(guildId -> guildId > 0) // Only include valid guild IDs
-                    .toList();
-        } catch (Exception e) {
-            logger.error("Error fetching guild IDs for isolation: {}", e.getMessage(), e);
-            return new ArrayList<>();
+        
+        if (jda != null) {
+            logger.info("Shutting down JDA...");
+            jda.shutdown();
         }
-    }
-    
-    /**
-     * Run data isolation migration if needed
-     * This ensures all database records have proper guild and server isolation fields
-     */
-    private void runDataIsolationMigrationIfNeeded() {
-        try {
-            logger.info("Verifying data isolation boundaries");
-            
-            // Use isolation bootstrap to verify proper boundary enforcement
-            IsolationBootstrap isolationInstance = IsolationBootstrap.getInstance();
-            if (isolationInstance != null) {
-                isolationInstance.verifyIsolationIntegrity();
-            }
-            
-            // Reset any caches if needed
-            logger.info("Data isolation verification complete");
-        } catch (Exception e) {
-            logger.error("Error during data isolation migration", e);
-        }
-    }
-    
-    /**
-     * Initialize and apply parser fixes for both CSV and log processing systems
-     * This ensures proper data isolation, accurate stats, and correct embed formatting
-     */
-    private void initializeParserFixes() {
-        try {
-            logger.info("Initializing comprehensive parser fixes for CSV and log systems");
-            
-            // Create the parser fix integration with all necessary dependencies
-            GameServerRepository gameServerRepository = new GameServerRepository();
-            PlayerRepository playerRepository = new PlayerRepository();
-            SftpConnector sftpConnector = new SftpConnector();
-            
-            parserFixIntegration = new ParserFixIntegration(
-                jda, gameServerRepository, playerRepository, sftpConnector, csvParser, logParser);
-            
-            // Initialize and apply all fixes as a single batch
-            boolean success = parserFixIntegration.initialize();
-            
-            if (success) {
-                logger.info("Successfully initialized and applied all parser fixes");
-            } else {
-                logger.warn("Parser fix initialization completed with warnings");
-            }
-        } catch (Exception e) {
-            logger.error("Error initializing parser fixes: {}", e.getMessage(), e);
-        }
+        
+        logger.info("Bot shutdown complete");
     }
 }

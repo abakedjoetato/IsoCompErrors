@@ -1,14 +1,3 @@
-#!/bin/bash
-
-# Build classpath string with all libraries in the lib directory
-CLASSPATH="target/classes:tempbuild"
-for jar in lib/*.jar; do
-  CLASSPATH="$CLASSPATH:$jar"
-done
-
-# Compile the simple main class if it doesn't exist
-mkdir -p tempbuild/com/deadside/bot
-cat > tempbuild/com/deadside/bot/Main.java << 'EOF'
 package com.deadside.bot;
 
 public class Main {
@@ -38,10 +27,3 @@ public class Main {
         }
     }
 }
-EOF
-
-# Compile the main class
-javac -d tempbuild tempbuild/com/deadside/bot/Main.java
-
-# Run the main class
-java -cp "$CLASSPATH" com.deadside.bot.Main

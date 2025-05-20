@@ -61,33 +61,26 @@ public class CommandManager {
      * Initialize all commands
      */
     private void initializeCommands() {
-        // Admin commands
-        registerCommand(new ServerCommand());
-        registerCommand(new SftpConfigCommand());
-        registerCommand(new SetLogChannelsCommand());
-        registerCommand(new PathFixCommand());
-        registerCommand(new ProcessHistoricalDataCommand());
-        registerCommand(new SyncStatsCommand());
-        registerCommand(new TestCommand());
-        registerCommand(new SetVoiceChannelCommand());
-        registerCommand(new RunParserFixCommand());
-        registerCommand(new ValidateParserCommand());
-        
-        // Player commands
-        registerCommand(new PlayerStatsCommand());
-        registerCommand(new TopPlayersCommand());
-        registerCommand(new RegisterPlayerCommand());
-        
-        // Economy commands
-        registerCommand(new BalanceCommand());
-        registerCommand(new ShopCommand());
-        registerCommand(new DailyCommand());
-        registerCommand(new WorkCommand());
-        
-        // Statistics commands
-        registerCommand(new ServerStatsCommand());
-        registerCommand(new WeaponStatsCommand());
-        registerCommand(new KillfeedCommand());
+        try {
+            // Admin commands
+            registerCommand(new ServerCommand());
+            registerCommand(new SftpConfigCommand());
+            registerCommand(new SetLogChannelsCommand());
+            registerCommand(new PathFixCommand(gameServerRepository, sftpConnector));
+            registerCommand(new ProcessHistoricalDataCommand());
+            registerCommand(new SyncStatsCommand());
+            registerCommand(new TestCommand());
+            registerCommand(new SetVoiceChannelCommand());
+            
+            // Player commands
+            registerCommand(new PlayerStatsCommand(playerRepository));
+            registerCommand(new TopPlayersCommand(playerRepository));
+            
+            // Statistics commands
+            registerCommand(new ServerStatsCommand(gameServerRepository));
+        } catch (Exception e) {
+            logger.error("Error initializing commands: {}", e.getMessage(), e);
+        }
     }
     
     /**

@@ -5,11 +5,9 @@ import com.deadside.bot.commands.ICommand;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.commands.Command.Choice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
@@ -17,71 +15,64 @@ import java.util.List;
  */
 public class CommandListener extends ListenerAdapter {
     private static final Logger logger = LoggerFactory.getLogger(CommandListener.class);
-    
     private final CommandManager commandManager;
     
-    /**
-     * Constructor
-     * @param commandManager The command manager
-     */
     public CommandListener(CommandManager commandManager) {
         this.commandManager = commandManager;
     }
     
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        String commandName = event.getName();
-        logger.info("Received slash command: {}", commandName);
+        logger.info("Command received: {}", event.getName());
         
         try {
-            // Get the command from the command manager
-            ICommand command = commandManager.getCommand(commandName);
+            String commandName = event.getName();
+            ICommand command = commandManager.getCommandByName(commandName);
             
             if (command != null) {
-                // Execute the command
                 command.execute(event);
-                logger.debug("Command {} executed successfully", commandName);
             } else {
-                logger.warn("Command not found: {}", commandName);
-                event.reply("Command not found: " + commandName).setEphemeral(true).queue();
+                event.reply("Unknown command: " + commandName).setEphemeral(true).queue();
+                logger.warn("Unknown command executed: {}", commandName);
             }
         } catch (Exception e) {
-            logger.error("Error handling slash command {}: {}", 
-                commandName, e.getMessage(), e);
+            logger.error("Error executing command", e);
+            String errorMessage = "An error occurred while executing the command";
+            if (e.getMessage() != null) {
+                errorMessage += ": " + e.getMessage();
+            }
             
-            // Reply with error message
-            String errorMessage = "An error occurred while processing the command: " + e.getMessage();
-            if (!event.isAcknowledged()) {
-                event.reply(errorMessage).setEphemeral(true).queue();
+            try {
+                if (event.isAcknowledged()) {
+                    event.getHook().sendMessage(errorMessage).setEphemeral(true).queue();
+                } else {
+                    event.reply(errorMessage).setEphemeral(true).queue();
+                }
+            } catch (Exception ex) {
+                logger.error("Error sending error message", ex);
             }
         }
     }
     
     @Override
     public void onCommandAutoCompleteInteraction(CommandAutoCompleteInteractionEvent event) {
-        String commandName = event.getName();
-        String optionName = event.getFocusedOption().getName();
-        
-        logger.debug("Received autocomplete for command: {}, option: {}", commandName, optionName);
-        
+        logger.debug("Autocomplete request: {} - {}", 
+            event.getName(), event.getFocusedOption().getName());
+            
         try {
-            // Get the command from the command manager
-            ICommand command = commandManager.getCommand(commandName);
+            String commandName = event.getName();
+            ICommand command = commandManager.getCommandByName(commandName);
             
             if (command != null) {
-                // Handle autocomplete
-                List<Choice> choices = command.handleAutoComplete(event);
-                event.replyChoices(choices).queue();
-                logger.debug("Autocomplete for command {} option {} handled successfully", commandName, optionName);
-            } else {
-                logger.warn("Command not found for autocomplete: {}", commandName);
-                event.replyChoices(Collections.emptyList()).queue();
+                List<net.dv8tion.jda.api.interactions.commands.Command.Choice> choices = 
+                    command.handleAutoComplete(event);
+                    
+                if (choices != null && !choices.isEmpty()) {
+                    event.replyChoices(choices).queue();
+                }
             }
         } catch (Exception e) {
-            logger.error("Error handling autocomplete for command {}, option {}: {}", 
-                commandName, optionName, e.getMessage(), e);
-            // Reply with empty choices on error
-            event.replyChoices(Collections.emptyList()).queue();
+            logger.error("Error handling autocomplete", e);
         }
     }
 }

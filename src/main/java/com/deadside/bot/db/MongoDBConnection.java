@@ -21,105 +21,93 @@ import static org.bson.codecs.configuration.CodecRegistries.fromRegistries;
 public class MongoDBConnection {
     private static final Logger logger = LoggerFactory.getLogger(MongoDBConnection.class);
     private static MongoDBConnection instance;
-    private MongoDatabase database;
     private MongoClient mongoClient;
+    private MongoDatabase database;
+    private static final String DEFAULT_DATABASE_NAME = "deadside_bot";
     
-    // Common MongoDB options
-    public static final ReplaceOptions UPSERT_OPTION = new ReplaceOptions().upsert(true);
-
     private MongoDBConnection() {
         // Private constructor for singleton
     }
-
+    
     /**
-     * Initialize the MongoDB connection
+     * Get instance of MongoDB connection
+     * @return Singleton instance
      */
-    public static synchronized void initialize(String mongoUri) {
+    public static MongoDBConnection getInstance() {
         if (instance == null) {
             instance = new MongoDBConnection();
-            instance.connect(mongoUri);
         }
+        return instance;
     }
-
+    
     /**
-     * Connect to MongoDB
+     * Initialize MongoDB connection (static method for Main class)
+     * @param connectionString MongoDB connection string
      */
-    private void connect(String mongoUri) {
+    public static void initialize(String connectionString) {
+        getInstance().initialize(connectionString, DEFAULT_DATABASE_NAME);
+    }
+    
+    // This method is handled by the static initialize method
+    
+    /**
+     * Initialize MongoDB connection with specific database name
+     * @param connectionString MongoDB connection string
+     * @param databaseName Database name to use
+     */
+    public void initialize(String connectionString, String databaseName) {
         try {
-            if (mongoUri == null || mongoUri.isEmpty()) {
-                throw new IllegalStateException("MongoDB URI is not configured. Please set MONGODB_URI environment variable.");
-            }
-
-            // For development/compilation testing, handle fake MongoDB URIs
-            if (mongoUri.contains("localhost") && System.getProperty("dev.mode") == null) {
-                logger.warn("Using development mode with mock MongoDB - for compilation testing only");
-                System.setProperty("dev.mode", "true");
-                
-                // In development mode with fake MongoDB, just log and return without attempting to connect
-                if (mongoUri.equals("mongodb://localhost:27017/deadsidebot")) {
-                    logger.info("Development mode - simulating successful MongoDB connection to: deadsidebot");
-                    return;
-                }
-            }
-
-            // Configure codec registry for POJOs
+            // Create codec registry for POJOs
             CodecRegistry pojoCodecRegistry = fromRegistries(
                     MongoClientSettings.getDefaultCodecRegistry(),
                     fromProviders(PojoCodecProvider.builder().automatic(true).build())
             );
-
-            // Configure and create client
+            
+            // Configure MongoDB client settings
             MongoClientSettings settings = MongoClientSettings.builder()
-                    .applyConnectionString(new ConnectionString(mongoUri))
+                    .applyConnectionString(new ConnectionString(connectionString))
                     .codecRegistry(pojoCodecRegistry)
                     .build();
-
-            // Get database name from config
-            String databaseName = Config.getInstance().getMongoDatabase();
             
+            // Create MongoDB client and get database
             mongoClient = MongoClients.create(settings);
             database = mongoClient.getDatabase(databaseName);
             
             logger.info("Connected to MongoDB database: {}", databaseName);
         } catch (Exception e) {
-            if (System.getProperty("dev.mode") != null) {
-                // In development mode, log the error but don't throw exception
-                logger.warn("Development mode - could not connect to MongoDB: {}", e.getMessage());
-                logger.info("Development mode - simulating successful MongoDB connection");
-            } else {
-                logger.error("Failed to initialize MongoDB connection", e);
-                throw new RuntimeException("Failed to initialize MongoDB connection", e);
-            }
+            logger.error("Failed to connect to MongoDB", e);
+            throw new RuntimeException("Failed to connect to MongoDB", e);
         }
     }
-
+    
     /**
-     * Get the singleton instance
-     */
-    public static synchronized MongoDBConnection getInstance() {
-        if (instance == null) {
-            throw new IllegalStateException("MongoDB connection has not been initialized. Call initialize() first.");
-        }
-        return instance;
-    }
-
-    /**
-     * Get the database
+     * Get MongoDB database instance
+     * @return MongoDB database
      */
     public MongoDatabase getDatabase() {
         if (database == null) {
-            throw new IllegalStateException("MongoDB database is not available. Connection may not have been initialized.");
+            throw new IllegalStateException("MongoDB connection not initialized. Call initialize() first.");
         }
         return database;
     }
-
+    
     /**
-     * Close the connection
+     * Close MongoDB connection
      */
     public void close() {
         if (mongoClient != null) {
             mongoClient.close();
-            logger.info("Closed MongoDB connection");
+            mongoClient = null;
+            database = null;
+            logger.info("MongoDB connection closed");
         }
+    }
+    
+    /**
+     * Get ReplaceOptions with upsert enabled
+     * @return ReplaceOptions with upsert=true
+     */
+    public ReplaceOptions getUpsertOptions() {
+        return new ReplaceOptions().upsert(true);
     }
 }

@@ -386,10 +386,80 @@ public class GameServer {
     }
     
     /**
+     * Get server IP address (alias for getIpAddress)
+     * @return Server IP address
+     */
+    public String getServerIp() {
+        return this.ipAddress;
+    }
+    
+    /**
+     * Get game port (alias for getPort)
+     * @return Game server port
+     */
+    public int getGamePort() {
+        return this.port;
+    }
+    
+    /**
+     * Get server version
+     * @return Server version string, or empty string if not set
+     */
+    private String serverVersion = "";
+    
+    public String getServerVersion() {
+        return serverVersion;
+    }
+    
+    public void setServerVersion(String serverVersion) {
+        this.serverVersion = serverVersion;
+    }
+    
+    /**
      * Get the server type name (for display purposes)
      */
     public String getServerTypeName() {
         return "Deadside";
+    }
+    
+    /**
+     * Get current number of players
+     * @return Current player count
+     */
+    public int getCurrentPlayers() {
+        return this.playerCount;
+    }
+    
+    /**
+     * Synchronize credentials between main and SFTP fields
+     * Ensures both credential sets are complete for fallback
+     */
+    public void synchronizeCredentials() {
+        // If SFTP credentials are missing but main credentials exist, copy them
+        if ((this.sftpHost == null || this.sftpHost.isEmpty()) && this.host != null && !this.host.isEmpty()) {
+            this.sftpHost = this.host;
+        }
+        
+        if ((this.sftpUsername == null || this.sftpUsername.isEmpty()) && this.username != null && !this.username.isEmpty()) {
+            this.sftpUsername = this.username;
+        }
+        
+        if ((this.sftpPassword == null || this.sftpPassword.isEmpty()) && this.password != null && !this.password.isEmpty()) {
+            this.sftpPassword = this.password;
+        }
+        
+        // If main credentials are missing but SFTP credentials exist, copy them
+        if ((this.host == null || this.host.isEmpty()) && this.sftpHost != null && !this.sftpHost.isEmpty()) {
+            this.host = this.sftpHost;
+        }
+        
+        if ((this.username == null || this.username.isEmpty()) && this.sftpUsername != null && !this.sftpUsername.isEmpty()) {
+            this.username = this.sftpUsername;
+        }
+        
+        if ((this.password == null || this.password.isEmpty()) && this.sftpPassword != null && !this.sftpPassword.isEmpty()) {
+            this.password = this.sftpPassword;
+        }
     }
     
     /**

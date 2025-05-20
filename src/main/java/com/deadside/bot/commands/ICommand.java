@@ -8,32 +8,33 @@ import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import java.util.List;
 
 /**
- * Interface for all slash commands
+ * Interface for all bot commands
  */
 public interface ICommand {
     /**
      * Get the name of the command
+     * @return Command name
      */
     String getName();
     
     /**
-     * Get the command data for registration
+     * Get command data for registration
+     * @return Command data
      */
     CommandData getCommandData();
     
     /**
      * Execute the command
+     * @param event The slash command event
      */
     void execute(SlashCommandInteractionEvent event);
     
     /**
-     * Handle autocomplete for this command.
-     * Default implementation returns an empty list, meaning no autocomplete suggestions.
-     * 
+     * Handle autocomplete for this command
      * @param event The autocomplete event
-     * @return List of choices for autocomplete, maximum 25 choices
+     * @return List of choices for autocomplete
      */
     default List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
-        return List.of(); // Default: no autocomplete
+        return List.of();
     }
 }

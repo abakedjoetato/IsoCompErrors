@@ -398,6 +398,332 @@ public class PlayerRepository {
     /**
      * Find a player by name with guild and server isolation
      */
+    /**
+     * Find a player by name and guild ID (works across all servers in that guild)
+     * @param name Player's name
+     * @param guildId Discord guild ID
+     * @return First player matching the name in that guild
+     */
+    public Player findByNameAndGuildId(String name, long guildId) {
+        try {
+            if (name == null || name.isEmpty() || guildId <= 0) {
+                logger.warn("Attempted to find player without proper name or guild ID. Name: {}, Guild ID: {}", 
+                    name, guildId);
+                return null;
+            }
+            
+            // Get all servers for this guild
+            GameServerRepository gameServerRepo = new GameServerRepository();
+            List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
+            
+            // Check each server for the player
+            for (com.deadside.bot.db.models.GameServer server : servers) {
+                if (server == null || server.getServerId() == null) continue;
+                
+                Player player = findByNameAndGuildIdAndServerId(name, guildId, server.getServerId());
+                if (player != null) {
+                    return player;
+                }
+            }
+            
+            return null;
+        } catch (Exception e) {
+            logger.error("Error finding player by name and guild ID: {}, {}", name, guildId, e);
+            return null;
+        }
+    }
+    
+    /**
+     * Search for players with partial name match in a guild
+     * @param partialName Partial name to search for
+     * @param guildId Guild ID for isolation
+     * @param limit Maximum number of results
+     * @return List of matching players
+     */
+    public List<Player> searchByPartialName(String partialName, long guildId, int limit) {
+        try {
+            if (partialName == null || partialName.isEmpty() || guildId <= 0) {
+                logger.warn("Attempted to search players without proper name or guild ID");
+                return new ArrayList<>();
+            }
+            
+            List<Player> results = new ArrayList<>();
+            
+            // Get all servers for this guild
+            GameServerRepository gameServerRepo = new GameServerRepository();
+            List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
+            
+            // Search in each server
+            for (com.deadside.bot.db.models.GameServer server : servers) {
+                if (server == null || server.getServerId() == null) continue;
+                
+                // Create regex pattern for case-insensitive partial name search
+                Bson filter = Filters.and(
+                    Filters.regex("name", ".*" + partialName + ".*", "i"),
+                    Filters.eq("guildId", guildId),
+                    Filters.eq("serverId", server.getServerId())
+                );
+                
+                // Find matching players and add to results
+                getCollection().find(filter)
+                    .limit(limit - results.size())
+                    .into(results);
+                
+                // Stop if we've reached the limit
+                if (results.size() >= limit) {
+                    break;
+                }
+            }
+            
+            return results;
+        } catch (Exception e) {
+            logger.error("Error searching players by partial name: {}", partialName, e);
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * Find top players by kills in a guild
+     * @param guildId Guild ID for isolation
+     * @param limit Maximum number of results
+     * @return List of top players by kills
+     */
+    /**
+     * Find top players by K/D ratio in a guild
+     * @param guildId Guild ID for isolation
+     * @param limit Maximum number of results
+     * @return List of top players by K/D ratio
+     */
+    public List<Player> findTopPlayersByKDRatio(long guildId, int limit) {
+        try {
+            if (guildId <= 0) {
+                logger.warn("Attempted to find top players by K/D without proper guild ID");
+                return new ArrayList<>();
+            }
+            
+            List<Player> results = new ArrayList<>();
+            
+            // Get all servers for this guild
+            GameServerRepository gameServerRepo = new GameServerRepository();
+            List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
+            
+            // Create a list to hold all players from all servers
+            List<Player> allPlayers = new ArrayList<>();
+            
+            // Get players from each server
+            for (com.deadside.bot.db.models.GameServer server : servers) {
+                if (server == null || server.getServerId() == null) continue;
+                
+                // Find players for this guild and server
+                Bson filter = Filters.and(
+                    Filters.eq("guildId", guildId),
+                    Filters.eq("serverId", server.getServerId())
+                );
+                
+                // Add players to combined list
+                getCollection().find(filter).into(allPlayers);
+            }
+            
+            // Sort all players by K/D ratio and limit results
+            allPlayers.sort((a, b) -> Double.compare(b.getKdRatio(), a.getKdRatio()));
+            
+            // Get top players up to limit
+            for (int i = 0; i < Math.min(limit, allPlayers.size()); i++) {
+                results.add(allPlayers.get(i));
+            }
+            
+            return results;
+        } catch (Exception e) {
+            logger.error("Error finding top players by K/D ratio for guild ID: {}", guildId, e);
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * Find top players by playtime in a guild
+     * @param guildId Guild ID for isolation
+     * @param limit Maximum number of results
+     * @return List of top players by playtime
+     */
+    public List<Player> findTopPlayersByPlaytime(long guildId, int limit) {
+        try {
+            if (guildId <= 0) {
+                logger.warn("Attempted to find top players by playtime without proper guild ID");
+                return new ArrayList<>();
+            }
+            
+            List<Player> results = new ArrayList<>();
+            
+            // Get all servers for this guild
+            GameServerRepository gameServerRepo = new GameServerRepository();
+            List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
+            
+            // Create a list to hold all players from all servers
+            List<Player> allPlayers = new ArrayList<>();
+            
+            // Get players from each server
+            for (com.deadside.bot.db.models.GameServer server : servers) {
+                if (server == null || server.getServerId() == null) continue;
+                
+                // Find players for this guild and server
+                Bson filter = Filters.and(
+                    Filters.eq("guildId", guildId),
+                    Filters.eq("serverId", server.getServerId())
+                );
+                
+                // Add players to combined list
+                getCollection().find(filter).into(allPlayers);
+            }
+            
+            // Sort all players by playtime and limit results
+            allPlayers.sort((a, b) -> Integer.compare(b.getPlaytimeMinutes(), a.getPlaytimeMinutes()));
+            
+            // Get top players up to limit
+            for (int i = 0; i < Math.min(limit, allPlayers.size()); i++) {
+                results.add(allPlayers.get(i));
+            }
+            
+            return results;
+        } catch (Exception e) {
+            logger.error("Error finding top players by playtime for guild ID: {}", guildId, e);
+            return new ArrayList<>();
+        }
+    }
+    
+    /**
+     * Count unique players by server ID
+     * @param serverId Server ID to count players for
+     * @return Count of unique players
+     */
+    public int countUniquePlayersByServerId(String serverId) {
+        try {
+            if (serverId == null || serverId.isEmpty()) {
+                logger.warn("Attempted to count players with null or empty server ID");
+                return 0;
+            }
+            
+            // Create filter for server ID
+            Bson filter = Filters.eq("serverId", serverId);
+            
+            // Count documents
+            long count = getCollection().countDocuments(filter);
+            
+            return (int)count;
+        } catch (Exception e) {
+            logger.error("Error counting unique players by server ID: {}", serverId, e);
+            return 0;
+        }
+    }
+    
+    /**
+     * Count active players in last X hours by server ID
+     * @param serverId Server ID to count players for
+     * @param hours Number of hours to look back
+     * @return Count of active players
+     */
+    public int countActivePlayersInLastHours(String serverId, int hours) {
+        try {
+            if (serverId == null || serverId.isEmpty() || hours <= 0) {
+                logger.warn("Invalid parameters for counting active players");
+                return 0;
+            }
+            
+            // Calculate timestamp for X hours ago
+            long hoursAgo = System.currentTimeMillis() - (hours * 60 * 60 * 1000);
+            
+            // Create filter for server ID and last seen time
+            Bson filter = Filters.and(
+                Filters.eq("serverId", serverId),
+                Filters.gt("lastSeen", hoursAgo)
+            );
+            
+            // Count documents
+            long count = getCollection().countDocuments(filter);
+            
+            return (int)count;
+        } catch (Exception e) {
+            logger.error("Error counting active players in last {} hours for server {}: {}", 
+                hours, serverId, e.getMessage(), e);
+            return 0;
+        }
+    }
+    
+    /**
+     * Count total kills for a server
+     * @param serverId Server ID to count kills for
+     * @return Total kill count
+     */
+    public int countTotalKillsByServerId(String serverId) {
+        try {
+            if (serverId == null || serverId.isEmpty()) {
+                logger.warn("Attempted to count kills with null or empty server ID");
+                return 0;
+            }
+            
+            // Create filter for server ID
+            Bson filter = Filters.eq("serverId", serverId);
+            
+            // Get all players for this server
+            List<Player> players = getCollection().find(filter).into(new ArrayList<>());
+            
+            // Sum up all kills
+            int totalKills = 0;
+            for (Player player : players) {
+                totalKills += player.getKills();
+            }
+            
+            return totalKills;
+        } catch (Exception e) {
+            logger.error("Error counting total kills by server ID: {}", serverId, e);
+            return 0;
+        }
+    }
+    
+    public List<Player> findTopPlayersByKills(long guildId, int limit) {
+        try {
+            if (guildId <= 0) {
+                logger.warn("Attempted to find top players without proper guild ID");
+                return new ArrayList<>();
+            }
+            
+            List<Player> results = new ArrayList<>();
+            
+            // Get all servers for this guild
+            GameServerRepository gameServerRepo = new GameServerRepository();
+            List<com.deadside.bot.db.models.GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
+            
+            // Create a list to hold all players from all servers
+            List<Player> allPlayers = new ArrayList<>();
+            
+            // Get players from each server
+            for (com.deadside.bot.db.models.GameServer server : servers) {
+                if (server == null || server.getServerId() == null) continue;
+                
+                // Find players for this guild and server
+                Bson filter = Filters.and(
+                    Filters.eq("guildId", guildId),
+                    Filters.eq("serverId", server.getServerId())
+                );
+                
+                // Add players to combined list
+                getCollection().find(filter).into(allPlayers);
+            }
+            
+            // Sort all players by kills and limit results
+            allPlayers.sort((a, b) -> Integer.compare(b.getKills(), a.getKills()));
+            
+            // Get top players up to limit
+            for (int i = 0; i < Math.min(limit, allPlayers.size()); i++) {
+                results.add(allPlayers.get(i));
+            }
+            
+            return results;
+        } catch (Exception e) {
+            logger.error("Error finding top players by kills for guild ID: {}", guildId, e);
+            return new ArrayList<>();
+        }
+    }
+    
     public Player findByNameAndGuildIdAndServerId(String name, long guildId, String serverId) {
         try {
             return getCollection().find(Filters.and(
