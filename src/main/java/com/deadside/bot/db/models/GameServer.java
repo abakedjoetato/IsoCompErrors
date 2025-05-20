@@ -22,6 +22,12 @@ public class GameServer {
     private String sftpHost;
     private int sftpPort;
     private String sftpUsername;
+    private String sftpPassword;
+    private int playerCount;
+    private int maxPlayers;
+    private boolean online;
+    private long logChannelId;
+    private boolean useSftpForLogs;
     
     public GameServer() {
         // Default constructor
@@ -179,5 +185,107 @@ public class GameServer {
     
     public void setSftpUsername(String sftpUsername) {
         this.sftpUsername = sftpUsername;
+    }
+    
+    public String getSftpPassword() {
+        return sftpPassword != null ? sftpPassword : ftpPassword;
+    }
+    
+    public void setSftpPassword(String sftpPassword) {
+        this.sftpPassword = sftpPassword;
+    }
+    
+    public int getPlayerCount() {
+        return playerCount;
+    }
+    
+    public void setPlayerCount(int playerCount) {
+        this.playerCount = playerCount;
+    }
+    
+    public int getMaxPlayers() {
+        return maxPlayers;
+    }
+    
+    public void setMaxPlayers(int maxPlayers) {
+        this.maxPlayers = maxPlayers;
+    }
+    
+    public boolean isOnline() {
+        return online;
+    }
+    
+    public void setOnline(boolean online) {
+        this.online = online;
+    }
+    
+    public long getLogChannelId() {
+        return logChannelId;
+    }
+    
+    public void setLogChannelId(long logChannelId) {
+        this.logChannelId = logChannelId;
+    }
+    
+    public boolean isUseSftpForLogs() {
+        return useSftpForLogs;
+    }
+    
+    public void setUseSftpForLogs(boolean useSftpForLogs) {
+        this.useSftpForLogs = useSftpForLogs;
+    }
+    
+    // Alias methods for compatibility
+    public String getServerId() {
+        return id;
+    }
+    
+    public String getDeathlogsDirectory() {
+        return logPath != null ? logPath + "/deathlogs" : "/deathlogs";
+    }
+    
+    public void setDeathlogsDirectory(String path) {
+        // Extract base log path from deathlogs path
+        if (path != null) {
+            if (path.endsWith("/deathlogs")) {
+                this.logPath = path.substring(0, path.length() - 10);
+            } else {
+                this.logPath = path;
+            }
+        }
+    }
+    
+    public String getLogDirectory() {
+        return logPath;
+    }
+    
+    public void setLogDirectory(String path) {
+        this.logPath = path;
+    }
+    
+    public String getUsername() {
+        return ftpUsername;
+    }
+    
+    public int getPort() {
+        return ftpPort;
+    }
+    
+    // Constructor with all parameters for backwards compatibility
+    public GameServer(String serverName, String serverIp, int gamePort, String ftpHost, 
+                     String ftpUsername, String ftpPassword, long guildId) {
+        this();
+        this.serverName = serverName;
+        this.serverIp = serverIp;
+        this.gamePort = gamePort;
+        this.ftpHost = ftpHost;
+        this.ftpUsername = ftpUsername;
+        this.ftpPassword = ftpPassword;
+        this.guildId = guildId;
+        this.name = serverName;
+        this.host = serverIp;
+        this.sftpHost = ftpHost;
+        this.sftpUsername = ftpUsername;
+        this.sftpPassword = ftpPassword;
     }
 }

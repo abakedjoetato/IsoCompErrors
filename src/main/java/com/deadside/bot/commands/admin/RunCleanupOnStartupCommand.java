@@ -2,7 +2,9 @@ package com.deadside.bot.commands.admin;
 
 import com.deadside.bot.commands.ICommand;
 import com.deadside.bot.utils.Config;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
@@ -23,10 +25,19 @@ public class RunCleanupOnStartupCommand implements ICommand {
 
     @Override
     public void execute(SlashCommandInteractionEvent event) {
+        // Check if user has administrator permission
+        if (!event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
+            event.reply("You need administrator permissions to use this command.").setEphemeral(true).queue();
+            return;
+        }
+        
         boolean enabled = event.getOption("enabled").getAsBoolean();
         config.setProperty("startup.cleanup.enabled", String.valueOf(enabled));
-        event.reply("Automatic cleanup on startup has been " + (enabled ? "enabled" : "disabled") + ".").setEphemeral(true).queue();
-        logger.info("Automatic cleanup on startup {} by {}", enabled ? "enabled" : "disabled", event.getUser().getAsTag());
+        event.reply("Automatic cleanup on startup has been " + (enabled ? "enabled" : "disabled") + ".")
+                .setEphemeral(true).queue();
+        
+        logger.info("Automatic cleanup on startup {} by {}", 
+                (enabled ? "enabled" : "disabled"), event.getUser().getAsTag());
     }
 
     @Override
@@ -36,12 +47,13 @@ public class RunCleanupOnStartupCommand implements ICommand {
 
     @Override
     public String getDescription() {
-        return "Enable or disable automatic cleanup on startup";
+        return "Enable or disable automatic cleanup on startup (admin only)";
     }
 
     @Override
     public CommandData getCommandData() {
         return Commands.slash(getName(), getDescription())
+                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
                 .addOptions(
                         new OptionData(OptionType.BOOLEAN, "enabled", "Enable or disable automatic cleanup", true)
                 );

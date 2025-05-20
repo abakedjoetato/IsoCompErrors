@@ -58,6 +58,11 @@ public class ServerCommand implements ICommand {
     }
     
     @Override
+    public String getDescription() {
+        return "Manage Deadside game servers";
+    }
+    
+    @Override
     public CommandData getCommandData() {
         // Create option data for server name with autocomplete
         OptionData serverNameOption = new OptionData(OptionType.STRING, "name", "The name of the server", true)

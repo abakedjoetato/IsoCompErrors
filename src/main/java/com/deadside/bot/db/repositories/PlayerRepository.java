@@ -150,8 +150,8 @@ public class PlayerRepository {
         player.setKills(doc.getInteger("kills", 0));
         player.setDeaths(doc.getInteger("deaths", 0));
         player.setSuicides(doc.getInteger("suicides", 0));
-        player.setPlaytimeMinutes(doc.getLong("playtimeMinutes", 0L));
-        player.setCurrency(doc.getLong("currency", 0L));
+        player.setPlaytimeMinutes(doc.containsKey("playtimeMinutes") ? doc.getLong("playtimeMinutes") : 0L);
+        player.setCurrency(doc.containsKey("currency") ? doc.getLong("currency") : 0L);
         
         // Handle timestamps
         Long lastDailyTimestamp = doc.getLong("lastDailyReward");

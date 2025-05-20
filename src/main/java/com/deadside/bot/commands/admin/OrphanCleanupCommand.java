@@ -29,15 +29,21 @@ public class OrphanCleanupCommand implements ICommand {
     }
     
     @Override
-    public CommandData getCommandData() {
-        return Commands.slash("cleanup-orphans", "Clean up orphaned records [Bot Owner Only]")
-            .setGuildOnly(true);
+    public String getDescription() {
+        return "Clean up orphaned records [Bot Owner Only]";
     }
     
     @Override
-    public List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
-        return List.of();
+    public CommandData getCommandData() {
+        return Commands.slash("cleanup-orphans", getDescription())
+            .setGuildOnly(true);
     }
+    
+    // This method is not required by ICommand interface, removing it
+    // @Override
+    // public List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
+    //     return List.of();
+    // }
     
     @Override
     public void execute(SlashCommandInteractionEvent event) {

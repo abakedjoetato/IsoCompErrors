@@ -1,211 +1,99 @@
 package com.deadside.bot.commands.admin;
 
 import com.deadside.bot.commands.ICommand;
-import com.deadside.bot.db.models.GameServer;
-import com.deadside.bot.db.repositories.GameServerRepository;
-import com.deadside.bot.isolation.DataCleanupTool;
-import com.deadside.bot.isolation.IsolationBootstrap;
-import com.deadside.bot.utils.OwnerCheck;
-import net.dv8tion.jda.api.EmbedBuilder;
-import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
+import com.deadside.bot.db.MongoDBConnection;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
+import net.dv8tion.jda.api.Permission;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.interactions.commands.Command.Choice;
-import net.dv8tion.jda.api.interactions.commands.OptionMapping;
+import net.dv8tion.jda.api.interactions.commands.DefaultMemberPermissions;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
-import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
-import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
+import net.dv8tion.jda.api.interactions.commands.build.OptionData;
+import org.bson.Document;
 
-import java.awt.*;
+import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.logging.Logger;
 
 /**
- * Admin command to reset database data for a guild/server
- * This is a destructive operation and can only be executed by the bot owner
+ * Admin command to reset/clear the database
  */
 public class DatabaseResetCommand implements ICommand {
-    
-    @Override
-    public String getName() {
-        return "db-reset";
-    }
-    
-    @Override
-    public CommandData getCommandData() {
-        return Commands.slash("db-reset", "Reset database data [Bot Owner Only]")
-            .setGuildOnly(true)
-            .addSubcommands(
-                new SubcommandData("server", "Reset data for a specific server in this guild")
-                    .addOption(OptionType.STRING, "server_id", "The ID of the server to reset", true),
-                new SubcommandData("allservers", "Reset data for all servers in this guild")
-                    .addOption(OptionType.BOOLEAN, "confirm", "Confirm this destructive operation", true)
-            );
-    }
-    
-    @Override
-    public List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
-        return List.of();
-    }
-    
+    private static final Logger logger = Logger.getLogger(DatabaseResetCommand.class.getName());
+    private static final List<String> COLLECTIONS = Arrays.asList("players", "servers", "economy_logs");
+
     @Override
     public void execute(SlashCommandInteractionEvent event) {
-        // Check if user is bot owner
-        if (!OwnerCheck.isOwner(event.getUser().getIdLong())) {
-            event.reply("This command can only be used by the bot owner.").setEphemeral(true).queue();
+        // Check if user has administrator permission
+        if (!event.getMember().hasPermission(Permission.ADMINISTRATOR)) {
+            event.reply("You need administrator permissions to use this command.").setEphemeral(true).queue();
             return;
         }
         
-        Guild guild = event.getGuild();
-        if (guild == null) {
-            event.reply("This command can only be used in a guild.").setEphemeral(true).queue();
+        String collection = event.getOption("collection") != null ? 
+                event.getOption("collection").getAsString() : "all";
+        
+        boolean confirm = event.getOption("confirm") != null && 
+                event.getOption("confirm").getAsBoolean();
+        
+        if (!confirm) {
+            event.reply("⚠️ This command will delete data from the database. " +
+                    "Please run the command again with confirm=true to proceed.")
+                    .setEphemeral(true).queue();
             return;
         }
-        
-        long guildId = guild.getIdLong();
-        
-        // Handle subcommands
-        String subcommand = event.getSubcommandName();
-        if (subcommand == null) {
-            event.reply("Invalid command usage.").setEphemeral(true).queue();
-            return;
-        }
-        
-        // Defer reply since this might take a while
-        event.deferReply().queue();
         
         try {
-            DataCleanupTool cleanupTool = IsolationBootstrap.getInstance().getDataCleanupTool();
+            MongoDatabase db = MongoDBConnection.getDatabase();
             
-            switch (subcommand) {
-                case "server":
-                    handleServerReset(event, cleanupTool, guildId);
-                    break;
-                case "allservers":
-                    handleAllServersReset(event, cleanupTool, guildId);
-                    break;
-                default:
-                    event.getHook().sendMessage("Unknown subcommand: " + subcommand).queue();
+            if ("all".equalsIgnoreCase(collection)) {
+                // Reset all collections
+                for (String collName : COLLECTIONS) {
+                    MongoCollection<Document> coll = db.getCollection(collName);
+                    coll.deleteMany(new Document());
+                    logger.info("Reset collection: " + collName);
+                }
+                event.reply("Successfully reset all collections in the database.").setEphemeral(true).queue();
+            } else if (COLLECTIONS.contains(collection.toLowerCase())) {
+                // Reset specific collection
+                MongoCollection<Document> coll = db.getCollection(collection);
+                coll.deleteMany(new Document());
+                logger.info("Reset collection: " + collection);
+                event.reply("Successfully reset the " + collection + " collection.").setEphemeral(true).queue();
+            } else {
+                event.reply("Invalid collection name. Valid options are: " + String.join(", ", COLLECTIONS) + ", or 'all'.")
+                        .setEphemeral(true).queue();
             }
         } catch (Exception e) {
-            // Handle any unexpected errors
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Database Reset Failed")
-                .setDescription("An unexpected error occurred during the database reset process.")
-                .setColor(Color.RED)
-                .addField("Error", e.getMessage(), false);
-            
-            event.getHook().sendMessageEmbeds(embed.build()).queue();
+            logger.severe("Error resetting database: " + e.getMessage());
+            event.reply("An error occurred while resetting the database: " + e.getMessage())
+                    .setEphemeral(true).queue();
         }
     }
-    
-    /**
-     * Handle the reset for a specific server
-     */
-    private void handleServerReset(SlashCommandInteractionEvent event, DataCleanupTool cleanupTool, long guildId) {
-        String serverId = event.getOption("server_id", "", OptionMapping::getAsString);
-        
-        if (serverId.isEmpty()) {
-            event.getHook().sendMessage("Server ID is required.").queue();
-            return;
-        }
-        
-        // Verify the server exists in this guild
-        GameServerRepository gameServerRepo = IsolationBootstrap.getInstance().getGameServerRepository();
-        GameServer gameServer = gameServerRepo.findByServerIdAndGuildId(serverId, guildId);
-        
-        if (gameServer == null) {
-            event.getHook().sendMessage("Server with ID `" + serverId + "` does not exist in this guild.").queue();
-            return;
-        }
-        
-        // Execute the reset
-        Map<String, Object> results = cleanupTool.resetDatabaseForGuildAndServer(guildId, serverId);
-        
-        if ((boolean) results.get("success")) {
-            int totalDeleted = (int) results.get("totalDeletedRecords");
-            
-            @SuppressWarnings("unchecked")
-            Map<String, Object> deleteCounts = (Map<String, Object>) results.get("deleteCounts");
-            
-            // Create embed with results
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Database Reset Completed")
-                .setDescription("Reset completed for server: " + gameServer.getName() + " (" + serverId + ")")
-                .setColor(Color.GREEN)
-                .addField("Total Deleted Records", String.valueOf(totalDeleted), false);
-            
-            // Add details for each collection
-            deleteCounts.forEach((collection, count) -> 
-                embed.addField(collection, String.valueOf(count), true));
-            
-            event.getHook().sendMessageEmbeds(embed.build()).queue();
-        } else {
-            // Something went wrong
-            String errorMessage = (String) results.getOrDefault("message", "Unknown error occurred during reset");
-            
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Database Reset Failed")
-                .setDescription("The reset process encountered an error.")
-                .setColor(Color.RED)
-                .addField("Error", errorMessage, false);
-            
-            event.getHook().sendMessageEmbeds(embed.build()).queue();
-        }
+
+    @Override
+    public String getName() {
+        return "dbreset";
     }
-    
-    /**
-     * Handle the reset for all servers in a guild
-     */
-    private void handleAllServersReset(SlashCommandInteractionEvent event, DataCleanupTool cleanupTool, long guildId) {
-        boolean confirmed = event.getOption("confirm", false, OptionMapping::getAsBoolean);
-        
-        if (!confirmed) {
-            event.getHook().sendMessage("This operation requires confirmation. Please set the `confirm` option to `true` to proceed.").queue();
-            return;
-        }
-        
-        // List all servers in this guild
-        GameServerRepository gameServerRepo = IsolationBootstrap.getInstance().getGameServerRepository();
-        List<GameServer> servers = gameServerRepo.findAllByGuildId(guildId);
-        
-        if (servers.isEmpty()) {
-            event.getHook().sendMessage("No servers found in this guild.").queue();
-            return;
-        }
-        
-        // Execute the reset
-        Map<String, Object> results = cleanupTool.resetDatabaseForGuild(guildId);
-        
-        if ((boolean) results.get("success")) {
-            // Create embed with results
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Database Reset Completed")
-                .setDescription("Reset completed for all servers in this guild")
-                .setColor(Color.GREEN);
-            
-            // Add server list
-            String serverList = servers.stream()
-                .map(server -> server.getName() + " (" + server.getServerId() + ")")
-                .collect(Collectors.joining("\n"));
-            
-            embed.addField("Affected Servers", serverList, false);
-            
-            event.getHook().sendMessageEmbeds(embed.build()).queue();
-        } else {
-            // Something went wrong
-            String errorMessage = (String) results.getOrDefault("message", "Unknown error occurred during reset");
-            
-            EmbedBuilder embed = new EmbedBuilder()
-                .setTitle("Database Reset Failed")
-                .setDescription("The reset process encountered an error.")
-                .setColor(Color.RED)
-                .addField("Error", errorMessage, false);
-            
-            event.getHook().sendMessageEmbeds(embed.build()).queue();
-        }
+
+    @Override
+    public String getDescription() {
+        return "Reset/clear database collections (admin only)";
+    }
+
+    @Override
+    public CommandData getCommandData() {
+        return Commands.slash(getName(), getDescription())
+                .setDefaultPermissions(DefaultMemberPermissions.enabledFor(Permission.ADMINISTRATOR))
+                .addOptions(
+                        new OptionData(OptionType.STRING, "collection", "Collection to reset ('all' for all collections)", true)
+                                .addChoice("All Collections", "all")
+                                .addChoice("Players", "players")
+                                .addChoice("Servers", "servers")
+                                .addChoice("Economy Logs", "economy_logs"),
+                        new OptionData(OptionType.BOOLEAN, "confirm", "Confirm the reset operation", true)
+                );
     }
 }
