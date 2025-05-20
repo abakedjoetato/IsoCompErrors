@@ -5,16 +5,21 @@ import com.deadside.bot.db.repositories.GameServerRepository;
 import com.deadside.bot.parsers.fixes.DirectPathResolutionFix;
 import com.deadside.bot.sftp.SftpConnector;
 import com.deadside.bot.utils.OwnerCheck;
+import com.deadside.bot.commands.ICommand;
 import net.dv8tion.jda.api.EmbedBuilder;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
-import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
+import net.dv8tion.jda.api.interactions.commands.build.CommandData;
+import net.dv8tion.jda.api.interactions.commands.Command.Choice;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.Permission;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.List;
 
 import java.awt.Color;
 import java.util.Map;
@@ -23,7 +28,7 @@ import java.util.Map;
  * Path fix command for admin use
  * This command allows admins to fix server paths
  */
-public class PathFixCommand extends ListenerAdapter {
+public class PathFixCommand implements ICommand {
     private static final Logger logger = LoggerFactory.getLogger(PathFixCommand.class);
     
     private final GameServerRepository repository;
@@ -39,17 +44,24 @@ public class PathFixCommand extends ListenerAdapter {
         this.connector = connector;
     }
     
-    /**
-     * Create the command for the JDA SlashCommand system
-     * @return The slash command data for this command
-     */
-    public SlashCommandData createCommand() {
+    @Override
+    public String getName() {
+        return "pathfix";
+    }
+    
+    @Override
+    public CommandData getCommandData() {
         return Commands.slash("pathfix", "Fix server paths")
             .addOption(OptionType.STRING, "server", "Server name to fix (leave empty for all servers)", false);
     }
     
     @Override
-    public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
+    public List<Choice> handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
+        return List.of(); // No autocomplete for this command
+    }
+    
+    @Override
+    public void execute(SlashCommandInteractionEvent event) {
         if (!event.getName().equals("pathfix")) {
             return;
         }

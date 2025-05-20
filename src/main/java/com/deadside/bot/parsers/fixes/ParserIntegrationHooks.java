@@ -312,7 +312,7 @@ public class ParserIntegrationHooks {
         logger.info("Registering parser integration hooks");
         
         // Register event listeners if needed
-        jda.addEventListener(new ParserEventListener(csvParser, logParser));
+        jda.addEventListener(new com.deadside.bot.parsers.fixes.ParserEventListener(csvParser, logParser));
         
         // Set hooks as registered
         hooksRegistered = true;
