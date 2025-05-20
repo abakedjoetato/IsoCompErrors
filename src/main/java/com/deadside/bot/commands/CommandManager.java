@@ -1,13 +1,23 @@
 package com.deadside.bot.commands;
 
+import com.deadside.bot.commands.admin.*;
+import com.deadside.bot.commands.economy.*;
+import com.deadside.bot.commands.player.*;
+import com.deadside.bot.commands.stats.*;
 import com.deadside.bot.db.repositories.GameServerRepository;
 import com.deadside.bot.db.repositories.PlayerRepository;
 import com.deadside.bot.parsers.DeadsideCsvParser;
 import com.deadside.bot.parsers.DeadsideLogParser;
 import com.deadside.bot.sftp.SftpConnector;
 import net.dv8tion.jda.api.JDA;
+import net.dv8tion.jda.api.interactions.commands.build.CommandData;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * Command manager for Discord slash commands
@@ -21,6 +31,9 @@ public class CommandManager {
     private final SftpConnector sftpConnector;
     private final DeadsideCsvParser csvParser;
     private final DeadsideLogParser logParser;
+    
+    private final Map<String, ICommand> commandMap = new HashMap<>();
+    private final List<ICommand> commands = new ArrayList<>();
     
     /**
      * Constructor
@@ -41,28 +54,98 @@ public class CommandManager {
         this.csvParser = csvParser;
         this.logParser = logParser;
         
-        registerCommands();
+        initializeCommands();
     }
     
     /**
-     * Register slash commands
+     * Initialize all commands
+     */
+    private void initializeCommands() {
+        // Admin commands
+        registerCommand(new ServerCommand());
+        registerCommand(new SftpConfigCommand());
+        registerCommand(new SetLogChannelsCommand());
+        registerCommand(new PathFixCommand());
+        registerCommand(new ProcessHistoricalDataCommand());
+        registerCommand(new SyncStatsCommand());
+        registerCommand(new TestCommand());
+        registerCommand(new SetVoiceChannelCommand());
+        registerCommand(new RunParserFixCommand());
+        registerCommand(new ValidateParserCommand());
+        
+        // Player commands
+        registerCommand(new PlayerStatsCommand());
+        registerCommand(new TopPlayersCommand());
+        registerCommand(new RegisterPlayerCommand());
+        
+        // Economy commands
+        registerCommand(new BalanceCommand());
+        registerCommand(new ShopCommand());
+        registerCommand(new DailyCommand());
+        registerCommand(new WorkCommand());
+        
+        // Statistics commands
+        registerCommand(new ServerStatsCommand());
+        registerCommand(new WeaponStatsCommand());
+        registerCommand(new KillfeedCommand());
+    }
+    
+    /**
+     * Register slash commands with Discord API
      */
     public void registerCommands() {
-        logger.info("Registering slash commands");
+        logger.info("Registering {} slash commands with Discord API", commands.size());
         
-        // For compilation only
-        logger.info("Commands registered successfully");
+        if (commands.isEmpty()) {
+            logger.warn("No commands to register");
+            return;
+        }
+        
+        List<CommandData> commandData = new ArrayList<>();
+        for (ICommand command : commands) {
+            commandData.add(command.getCommandData());
+        }
+        
+        try {
+            // Global commands
+            jda.updateCommands().addCommands(commandData).queue(
+                success -> logger.info("Successfully registered {} global commands", commandData.size()),
+                error -> logger.error("Failed to register global commands: {}", error.getMessage())
+            );
+            
+            logger.info("Commands registration queued successfully");
+        } catch (Exception e) {
+            logger.error("Error registering commands", e);
+        }
     }
     
     /**
      * Register a command with the command manager
      * @param command The command to register
      */
-    public void registerCommand(Object command) {
-        logger.info("Registering command: {}", command.getClass().getSimpleName());
+    public void registerCommand(ICommand command) {
+        String name = command.getName();
+        commandMap.put(name, command);
+        commands.add(command);
         
-        // For compilation only - actual implementation would track commands
-        logger.info("Command registered successfully: {}", command.getClass().getSimpleName());
+        logger.info("Registered command: {}", name);
+    }
+    
+    /**
+     * Get a command by name
+     * @param name The name of the command
+     * @return The command, or null if not found
+     */
+    public ICommand getCommand(String name) {
+        return commandMap.get(name);
+    }
+    
+    /**
+     * Get all registered commands
+     * @return List of all commands
+     */
+    public List<ICommand> getAllCommands() {
+        return commands;
     }
     
     /**
@@ -103,5 +186,13 @@ public class CommandManager {
      */
     public DeadsideLogParser getLogParser() {
         return logParser;
+    }
+    
+    /**
+     * Get the JDA instance
+     * @return The JDA instance
+     */
+    public JDA getJda() {
+        return jda;
     }
 }

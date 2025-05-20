@@ -105,12 +105,6 @@ public class DeadsideBot {
                             CacheFlag.EMOJI,
                             CacheFlag.VOICE_STATE
                     ))
-                    .addEventListeners(
-                            new CommandListener(commandManager),
-                            new ButtonListener(),
-                            new StringSelectMenuListener(),
-                            new ModalListener()
-                    )
                     .build();
                     
             // Create new parser instances with valid JDA reference
@@ -119,6 +113,14 @@ public class DeadsideBot {
             
             // Initialize command manager with all required dependencies
             commandManager = new CommandManager(jda, gameServerRepository, playerRepository, sftpConnector, csvParserWithJda, logParserWithJda);
+            
+            // Now add event listeners after command manager is initialized
+            jda.addEventListener(
+                    new CommandListener(commandManager),
+                    new ButtonListener(),
+                    new StringSelectMenuListener(),
+                    new ModalListener()
+            );
             
             // Wait for JDA to be ready
             jda.awaitReady();

@@ -1,11 +1,16 @@
 package com.deadside.bot.listeners;
 
 import com.deadside.bot.commands.CommandManager;
+import com.deadside.bot.commands.ICommand;
 import net.dv8tion.jda.api.events.interaction.command.CommandAutoCompleteInteractionEvent;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
+import net.dv8tion.jda.api.interactions.commands.Command.Choice;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import java.util.Collections;
+import java.util.List;
 
 /**
  * Listener for slash command interactions
@@ -25,17 +30,27 @@ public class CommandListener extends ListenerAdapter {
     
     @Override
     public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
-        logger.debug("Received slash command: {}", event.getName());
+        String commandName = event.getName();
+        logger.info("Received slash command: {}", commandName);
         
         try {
-            // Handle the command
-            handleCommand(event);
+            // Get the command from the command manager
+            ICommand command = commandManager.getCommand(commandName);
+            
+            if (command != null) {
+                // Execute the command
+                command.execute(event);
+                logger.debug("Command {} executed successfully", commandName);
+            } else {
+                logger.warn("Command not found: {}", commandName);
+                event.reply("Command not found: " + commandName).setEphemeral(true).queue();
+            }
         } catch (Exception e) {
             logger.error("Error handling slash command {}: {}", 
-                event.getName(), e.getMessage(), e);
+                commandName, e.getMessage(), e);
             
             // Reply with error message
-            String errorMessage = "An error occurred while processing the command";
+            String errorMessage = "An error occurred while processing the command: " + e.getMessage();
             if (!event.isAcknowledged()) {
                 event.reply(errorMessage).setEphemeral(true).queue();
             }
@@ -44,35 +59,29 @@ public class CommandListener extends ListenerAdapter {
     
     @Override
     public void onCommandAutoCompleteInteraction(CommandAutoCompleteInteractionEvent event) {
-        logger.debug("Received autocomplete for command: {}, option: {}", 
-            event.getName(), event.getFocusedOption().getName());
+        String commandName = event.getName();
+        String optionName = event.getFocusedOption().getName();
+        
+        logger.debug("Received autocomplete for command: {}, option: {}", commandName, optionName);
         
         try {
-            // Handle the autocomplete
-            handleAutoComplete(event);
+            // Get the command from the command manager
+            ICommand command = commandManager.getCommand(commandName);
+            
+            if (command != null) {
+                // Handle autocomplete
+                List<Choice> choices = command.handleAutoComplete(event);
+                event.replyChoices(choices).queue();
+                logger.debug("Autocomplete for command {} option {} handled successfully", commandName, optionName);
+            } else {
+                logger.warn("Command not found for autocomplete: {}", commandName);
+                event.replyChoices(Collections.emptyList()).queue();
+            }
         } catch (Exception e) {
             logger.error("Error handling autocomplete for command {}, option {}: {}", 
-                event.getName(), event.getFocusedOption().getName(), e.getMessage(), e);
+                commandName, optionName, e.getMessage(), e);
+            // Reply with empty choices on error
+            event.replyChoices(Collections.emptyList()).queue();
         }
-    }
-    
-    /**
-     * Handle a slash command
-     * @param event The slash command event
-     */
-    private void handleCommand(SlashCommandInteractionEvent event) {
-        // Simple implementation for compilation
-        logger.info("Handling command: {}", event.getName());
-        event.reply("Command received: " + event.getName()).queue();
-    }
-    
-    /**
-     * Handle an autocomplete interaction
-     * @param event The autocomplete event
-     */
-    private void handleAutoComplete(CommandAutoCompleteInteractionEvent event) {
-        // Simple implementation for compilation
-        logger.info("Handling autocomplete for command: {}, option: {}", 
-            event.getName(), event.getFocusedOption().getName());
     }
 }

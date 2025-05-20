@@ -2,3 +2,30 @@ modules = ["java-17"]
 [nix]
 channel = "stable-24_05"
 packages = ["unzip", "maven", "openjdk17"]
+
+[[ports]]
+localPort = 8080
+externalPort = 80
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "DeadsideBot"
+
+[[workflows.workflow]]
+name = "DeadsideBot"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "./run_bot.sh"
+
+[deployment]
+run = ["sh", "-c", "./run_bot.sh"]
